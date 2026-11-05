@@ -143,6 +143,18 @@
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <ListBox x:Name="ThumbList" SelectionChanged="ThumbList_SelectionChanged"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="4">
+                                            <Border Width="120" Height="160" Background="#14161B"
+                                                    BorderBrush="#3A3E4B" BorderThickness="1">
+                                                <Image Source="{Binding Image}" Stretch="Uniform"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding PageNumber}" HorizontalAlignment="Center"
+                                                       Foreground="#9BA0AF" FontSize="10" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
                                 <ListBox.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <VirtualizingStackPanel/>

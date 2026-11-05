@@ -686,6 +686,7 @@ public partial class MainWindow : Window
                 _workspace.SetActiveDocument(doc);
                 ShowPageForActiveDoc();
                 RefreshBookmarks();
+                RefreshThumbnails(doc);
                 // Refresh outline lazily.
                 if (OutlineTree.Items.Count == 0)
                 {
@@ -693,6 +694,29 @@ public partial class MainWindow : Window
                     var outline = _pdf.GetOutline(doc.Path, pw);
                     OutlineTree.ItemsSource = outline;
                 }
+            }
+        }
+    }
+
+    private async void RefreshThumbnails(DocumentInfo doc)
+    {
+        ThumbList.ItemsSource = null;
+        if (doc.PageCount > 200) return; // keep the sidebar cheap on huge documents
+        var items = Enumerable.Range(1, doc.PageCount)
+            .Select(n => new ThumbnailItem { PageNumber = n })
+            .ToList();
+        ThumbList.ItemsSource = items;
+        _passwords.TryGetValue(doc.Path, out var password);
+        foreach (var item in items)
+        {
+            try
+            {
+                await item.LoadAsync(_renderer, doc.Path, password);
+                ThumbList.Items.Refresh();
+            }
+            catch
+            {
+                // A failed thumbnail shows as blank rather than breaking the list.
             }
         }
     }

@@ -1,104 +1,74 @@
 # PDFreader
 
-A Windows-first desktop workspace for reading PDFs, opening several documents side by side, drawing on pages, keeping linked notes, organizing pages, and exporting annotated or converted copies.
+A native Windows desktop workspace for reading PDFs — open several documents side by side, draw on pages, keep linked notes, and export annotated or converted copies.
 
-PDFreader is built with **Tauri 2**, **React 19 + TypeScript**, **PDF.js** for the interactive viewer, and a bundled **PDFium** native engine for page counts and thumbnails. Documents stay local; the viewer and all core note/annotation functions work offline.
-
-## Downloads
-
-Prebuilt Windows binaries (NSIS installer and portable executable) are published under [GitHub Releases](https://github.com/refat-pasha/PDFreader/releases). Both are unsigned, so Windows SmartScreen may show "Windows protected your PC" — choose **More info → Run anyway** only if you trust the build. SHA-256 checksums are attached to each release.
+PDFreader is built with **.NET 10 + WPF**, renders pages with the **PDFium** engine (via PDFtoImage), and parses text, outlines, and passwords with **PdfPig**. It has **no WebView2 and no browser runtime dependency** — the UI is drawn with native Windows controls, so it runs on machines where Chromium-based viewers fail to start. Documents stay local; everything works offline.
 
 ![PDFreader workspace](docs/assets/workspace.png)
 
-Text selection is a first-class reading action. Select a passage and choose **Highlight** or **Quote in note**; highlights are stored as editable draft markup and flattened into exported PDFs.
-
-The dialog system traps keyboard focus, focuses the first control, closes with Escape, and restores focus to the triggering control.
-
-![Selecting text and highlighting it](docs/assets/highlighting.png)
+Text selection is a first-class reading action, and annotations are drawn on a transparent overlay above each page. "Save annotated copy" flattens your marks into a regular PDF you can share.
 
 ## What works today
 
-- **Reading:** tabs with middle-click close and close/other/all context actions, up to four panes with draggable/keyboard-accessible split dividers, fit-page/fit-width/custom zoom, rotation, page input, page buttons, mouse-wheel page turn, keyboard navigation, thumbnails, real PDF outline, labeled page bookmarks, password-protected PDF unlocking, text selection/copy, and search within one PDF or across all open documents with in-page match highlighting.
-- **Annotations:** selectable-text highlighting, pen, highlighter, rectangle/ellipse/arrow, free text, margin notes, image stamps, eraser selection, selection/move, undo/redo, size/color/opacity palette.
-- **Notes:** Markdown notebook with page-linked backlinks, quote selected passage directly into a note, standalone Markdown notebook export, automatic local persistence, and export into created documents.
-- **Editing:** page organizer supports reorder, rotate 90°, and delete; applying creates an edited copy rather than overwriting the original.
-- **Export:** annotated PDF with flattened markup, DOCX (editable text or visual pages with notes), legacy `.doc` through LibreOffice when installed, Markdown, TXT, PNG, and multi-page ZIP.
-- **OCR:** Windows built-in OCR is used automatically for scanned-page text/Markdown/Word exports when an OCR language is installed. Tesseract is an optional alternative for additional languages.
-- **Desktop integration:** native file open/save dialogs, recent-file menu, single instance with PDF path forwarding, PDF file association, window-state restoration, per-user NSIS installer, and a Settings panel showing native engine/optional component availability.
-- **Persistence:** annotations and notes are saved in local application storage; the desktop workspace reopens local PDFs with their tabs, panes, pages, zoom, and rotation after a restart. Exports write atomically through a temporary file.
+- **Reading:** tabs, fit-page/fit-width/custom zoom, rotation, page input, prev/next, Page Up/Page Down/Home/End keys, drag-and-drop, and command-line/file-association opening.
+- **Annotations:** pen, highlighter, rectangle, ellipse, arrow, and an eraser that deletes the mark under the cursor. Six colors, undo/redo. Marks are stored in PDF page-point coordinates so they follow the page across zoom and rotation.
+- **Annotated PDF export:** every page is re-rendered through PDFium and the marks are burned into the raster — the exported file looks exactly like the on-screen view.
+- **Search:** full-text search across all open documents with page jumps.
+- **Sidebar:** page thumbnails (rendered on demand), the PDF's real outline/bookmarks, labeled page bookmarks, and a Markdown notebook.
+- **Notes:** Markdown notebook with page-linked backlinks, "quote selection into note" flow, standalone Markdown/DOCX notebook export.
+- **Password-protected PDFs:** unlock dialog with retry; passwords live in memory for the session only and are never written to disk.
+- **Session recovery:** open documents, page positions, zoom, and rotation are restored on the next launch.
+- **Recent files:** last ten documents, offered in File → Open Recent.
+- **Other exports:** current page → PNG, page text → TXT, notebook → DOCX (OpenXML).
 
-## Known limitations
+## Build
 
-- The current renderer is **PDF.js**; the native PDFium integration from the original architecture is deferred. The PDF engine boundary is isolated so the decision can be revisited without rewriting the workspace.
-- Original PDF text is not directly editable. PDF text is positioned glyph data, not flowing paragraphs; safe text editing needs font and layout reconstruction. Use text annotations or export to DOCX for editing.
-- DOCX export is a practical document, not guaranteed pixel-perfect Word reconstruction. Use **Editable text** for flowing Word paragraphs or **Preserve page layout** for annotated page images.
-- Browser preview cannot reopen local PDFs after a restart because browser file handles are not retained; desktop session restoration is supported.
-- Annotations flatten into visible page content in exported PDFs. Editable draft markup lives in PDFreader's local workspace for the original document; flattening is intentionally one-way in this version.
-- Digital signatures are not implemented. Saving a flattened copy invalidates signatures; save to a new file.
-- Secure redaction is not offered. Black rectangles are not redaction.
-- Encrypted PDFs can be read after entering the password. Passwords remain in memory for the session and are never written to disk. Flattened PDF export of an encrypted source is not supported; Markdown/TXT/DOCX export works after unlocking.
-- OCR depends on installed Windows OCR language packs; Tesseract can be added for extra languages. Export OCR runs only in the desktop build.
-- `.doc` requires LibreOffice; otherwise the app creates DOCX and clearly reports the fallback.
-- On Windows 11 26H2 build 26200, the installed WebView2 156 runtime currently crashes with `STATUS_BREAKPOINT`; this is a host runtime regression. The app includes optional fixed-runtime detection, but this specific host still failed even with the fixed 155 runtime. See [docs/webview2-compat.md](docs/webview2-compat.md) and [docs/VERIFICATION.md](docs/VERIFICATION.md). For this host, launch **Start PDFreader (browser fallback).cmd** to use the same production UI in an Edge app window.
-
-## Development
-
-Prerequisites on Windows:
-
-- Node.js 20+ and pnpm
-- Rust stable with the MSVC target
-- Visual Studio 2022 Build Tools with the C++ workload
-- WebView2 runtime (installed on Windows 11; bootstrapped by the installer on Windows 10)
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download) with the Windows Desktop runtime (any Windows 10/11 x64 machine).
 
 ```powershell
-pnpm install
-pnpm dev                 # browser development at http://127.0.0.1:1420
-pnpm tauri dev           # desktop development window
-pnpm build               # type-check + production web build
-pnpm test                # unit and PDF export tests
-pnpm tauri build         # NSIS installer in src-tauri/target/release/bundle/nsis
+dotnet build dotnet/PDFreader.App          # build the app
+dotnet build dotnet/PDFreader.Tests        # build tests
+dotnet exec dotnet/PDFreader.Tests/bin/Debug/net10.0/PDFreader.Tests.dll   # run all tests in-process
 ```
 
-The browser build cannot read arbitrary local paths; use the desktop build for open/save integration. The demo PDF is generated locally and requires no sample assets.
+The test suite (17 tests) runs PDFium for real — rendering pages, opening an encrypted fixture with a password, extracting text, and writing a flattened annotated PDF.
 
-### Optional components
-
-- **Tesseract OCR:** optional alternative to Windows OCR for additional languages. The app detects `C:\Program Files\Tesseract-OCR\tesseract.exe`.
-- **Word 97:** install LibreOffice. The app detects `C:\Program Files\LibreOffice\program\soffice.exe`.
-
-## Smoke tests
-
-With Chrome running headlessly on the CDP port:
+Run the app:
 
 ```powershell
-node scripts/ui-smoke.mjs http://127.0.0.1:1420 tests/.artifacts/app.png
-node scripts/ui-actions.mjs http://127.0.0.1:1420
+dotnet\PDFreader.App\bin\Debug\net10.0-windows\PDFreader.exe            # empty start
+dotnet\...\PDFreader.exe "C:\path\to\document.pdf"                      # open a file
 ```
 
-The action test draws an annotation, splits the pane, opens the notebook, and opens the export dialog.
+Passing a PDF path on the command line is the same entry point Windows uses when you associate `.pdf` files with the app.
 
-## Repository map
+## Project layout
 
-```text
-src/
-  app/                  file service and local persistence
-  features/workspace/   store, panes, tabs, page organizer
-  features/viewer/      PDF.js loading, page rendering, thumbnails
-  features/annotate/    annotation model, layer, palette, markup panel
-  features/notes/       Markdown notes and links
-  features/export/      PDF, DOCX, Markdown, text and image exporters
-  features/shell/       menus, dialogs, command palette, shortcuts
-src-tauri/              Tauri native shell and secure file commands
-scripts/                CDP UI verification scripts
-docs/                   architecture, data formats, QA and release notes
+```
+dotnet/
+├─ PDFreader.App/     WPF UI: main window, page viewer, dialogs, exporters
+├─ PDFreader.Core/    Testable logic: workspace state, PDF service, persistence, exports
+└─ PDFreader.Tests/   xUnit tests with an in-process runner (dotnet exec)
 ```
 
-## Privacy and safety
+CI (`.github/workflows/ci.yml`) builds and tests all three components on every push.
 
-- No cloud services, telemetry, or AI calls.
-- The renderer cannot invoke arbitrary shell commands or access arbitrary paths outside the validated native commands.
-- PDF JavaScript and automatic external actions are not enabled.
-- Exports are written to a temporary sibling and atomically moved into place.
-- A corrupt local draft is ignored at startup instead of blocking the reader.
+## Why a .NET rewrite?
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/QA.md](docs/QA.md) and [docs/SHORTCUTS.md](docs/SHORTCUTS.md) for more detail.
+The first version of PDFreader was a Tauri 2 app. Tauri renders its UI through the WebView2 runtime, and on some Windows 11 hosts (notably Insider build 26200) WebView2's Chromium processes abort at startup — the window opens and immediately dies. That failure mode is documented in `docs/webview2-compat.md`; it reproduces with the stable runtime, the fixed-version runtime, and the newest preview runtimes, and is unrelated to the app itself.
+
+The .NET rewrite removes that dependency class entirely: WPF draws with DirectX through Microsoft's own stack, PDFium is the only third-party native component, and the app now runs on the same machine where the WebView2 build could not start.
+
+The original Tauri source is still in this repository under `src/` and `src-tauri/` for reference; the WPF app in `dotnet/` is the active codebase.
+
+## Notes and limitations
+
+- Thumbnails render lazily and are capped at 200 pages in the sidebar (huge documents stay responsive; the main viewer handles any page count).
+- Annotation marks are flattened into exported PDFs; editing the original file's text is not supported.
+- The Windows installer (with `.pdf` file association) is planned; for now run the exe directly or associate it manually via Settings → Default apps.
+- OCR for scanned pages is not yet wired into the .NET version (the Tauri version had Windows OCR integration).
+
+## History
+
+- **0.1.0** — Tauri 2 + React/TypeScript version (archived; binaries on the [releases page](https://github.com/refat-pasha/PDFreader/releases)).
+- **0.2.0** — native .NET 10 WPF rewrite (this codebase).
