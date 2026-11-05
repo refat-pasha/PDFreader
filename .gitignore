@@ -1,0 +1,12 @@
+node_modules/
+dist/
+target/
+.vite/
+coverage/
+*.local
+.DS_Store
+Thumbs.db
+src-tauri/target/
+tests/.artifacts/
+
+release/
