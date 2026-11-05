@@ -1,0 +1,20 @@
+<Window x:Class="PDFreader.App.ExportDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Export document" Width="440" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        ShowInTaskbar="False" Background="#1B1D23">
+    <StackPanel Margin="18">
+        <TextBlock Text="Export document" FontWeight="SemiBold" FontSize="15"/>
+        <TextBlock x:Name="DocNameText" Foreground="#9BA0AF" Margin="0,4,0,12" TextTrimming="CharacterEllipsis"/>
+        <CheckBox x:Name="ExportMarkdown" Content="Notebook → Markdown (.md)" Margin="0,4"/>
+        <CheckBox x:Name="ExportText" Content="Page text → TXT (.txt)" Margin="0,4"/>
+        <CheckBox x:Name="ExportDocx" Content="Notebook → Word (.docx)" Margin="0,4"/>
+        <CheckBox x:Name="ExportPng" Content="Current page → PNG image" Margin="0,4"/>
+        <TextBlock x:Name="StatusText" Foreground="#9BA0AF" Margin="0,12,0,0" TextWrapping="Wrap"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Cancel" Click="Cancel_Click" MinWidth="84" Margin="0,0,8,0"/>
+            <Button Content="Export…" Click="Export_Click" MinWidth="100"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

@@ -10,3 +10,8 @@ src-tauri/target/
 tests/.artifacts/
 
 release/
+
+# .NET build outputs
+[Bb]in/
+[Oo]bj/
+*.log
