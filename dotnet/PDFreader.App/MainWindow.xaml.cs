@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using PDFreader.Core;
 using PDFreader.Core.Models;
@@ -23,27 +22,25 @@ public partial class MainWindow : Window
     private double _zoom = 1.0;
     private ZoomMode _zoomMode = ZoomMode.FitPage;
     private int _rotation;
-    private readonly Dictionary<string, TabItem> _tabsByDocId = new();
+    private readonly Dictionary<string, PageViewer> _viewersByDocId = new();
+    private readonly Dictionary<string, Border> _tabsByDocId = new();
     private Note? _activeNote;
     private bool _suppressNoteEvents;
+    private string _activeTool = "Select";
 
     public MainWindow()
     {
         InitializeComponent();
-        Diagnostics.Trace("MainWindow ctor begin");
-        _docTabsLoaded = true;
         _workspace.StateChanged += () => Dispatcher.Invoke(RefreshChrome);
         RestoreSession();
         UpdateRecentMenu();
-        Diagnostics.Trace("MainWindow ctor done");
+        SetTool("Select");
 
         // Command-line PDFs (also the entry point for OS file association).
         Loaded += (_, _) =>
         {
-            Diagnostics.Trace($"MainWindow Loaded, args={App.Arguments.Length}");
             foreach (var arg in App.Arguments)
             {
-                Diagnostics.Trace($"arg: {arg} exists={File.Exists(arg)}");
                 if (File.Exists(arg) && arg.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
                     OpenPath(arg);
             }
@@ -101,10 +98,9 @@ public partial class MainWindow : Window
 
             var doc = _workspace.OpenDocument(path, count.Value, requiresPassword: needsPassword);
             EnsureTab(doc);
-            _workspace.SetActiveDocument(doc);
+            SelectDocument(doc);
             RememberRecent(path);
             SetStatus($"{doc.Name} — {doc.PageCount} pages");
-            ShowPageForActiveDoc();
         }
         catch (Exception ex)
         {
@@ -119,26 +115,30 @@ public partial class MainWindow : Window
             OpenPath(path, dialog.PasswordValue);
     }
 
+    // ------------------------------------------------------------ tabs/viewer
+
     private void EnsureTab(DocumentInfo doc)
     {
-        if (_tabsByDocId.ContainsKey(doc.Id)) return;
-        Diagnostics.Trace($"EnsureTab {doc.Name}");
+        if (_viewersByDocId.ContainsKey(doc.Id)) return;
 
         var viewer = new PageViewer(doc, _renderer, _pdf, _passwords, _workspace);
-        Diagnostics.Trace("EnsureTab viewer constructed");
-        var tab = new TabItem
+        _viewersByDocId[doc.Id] = viewer;
+
+        var tab = new Border
         {
-            Header = BuildTabHeader(doc),
-            Content = viewer,
+            Background = Brushes.Transparent,
+            CornerRadius = new CornerRadius(5),
+            Margin = new Thickness(0, 0, 4, 4),
+            Padding = new Thickness(10, 4, 6, 4),
+            Cursor = Cursors.Hand,
             Tag = doc.Id,
+            Child = BuildTabHeader(doc),
         };
-        DocTabs.Items.Add(tab);
+        tab.MouseLeftButtonDown += (_, _) => SelectDocument(doc);
         _tabsByDocId[doc.Id] = tab;
+        TabStrip.Children.Add(tab);
         EmptyState.Visibility = Visibility.Collapsed;
-        // TabControl does not reliably auto-select items added at runtime;
-        // without selection the content is never realized and the viewer
-        // never gets a layout size.
-        DocTabs.SelectedItem = tab;
+
         viewer.Rendered += page =>
         {
             SetStatus($"{doc.Name} — page {page} rendered");
@@ -149,17 +149,23 @@ public partial class MainWindow : Window
     private static StackPanel BuildTabHeader(DocumentInfo doc)
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
-        panel.Children.Add(new TextBlock { Text = doc.Name, MaxWidth = 160, TextTrimming = TextTrimming.CharacterEllipsis });
-        var close = new Button
+        panel.Children.Add(new TextBlock
         {
-            Content = "✕",
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            Margin = new Thickness(8, 0, 0, 0),
-            Padding = new Thickness(2, 0, 2, 0),
+            Text = doc.Name,
+            MaxWidth = 150,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            FontSize = 12,
+        });
+        var close = new TextBlock
+        {
+            Text = "\uE711",
+            FontFamily = new FontFamily("Segoe MDL2 Assets"),
+            FontSize = 9,
+            Margin = new Thickness(8, 1, 0, 0),
+            Opacity = 0.7,
             Cursor = Cursors.Hand,
         };
-        close.Click += (_, args) =>
+        close.MouseLeftButtonDown += (_, args) =>
         {
             args.Handled = true;
             CloseDocument(doc.Id);
@@ -170,36 +176,85 @@ public partial class MainWindow : Window
 
     private static void CloseDocument(string docId)
     {
-        // Handled through MainWindow via tag lookup in DocTabs_SelectionChanged owner.
         if (Application.Current.MainWindow is MainWindow main)
             main.CloseTab(docId);
     }
 
+    private void SelectDocument(DocumentInfo doc)
+    {
+        _workspace.SetActiveDocument(doc);
+        if (ViewerHost.Content is PageViewer previous && previous != _viewersByDocId.GetValueOrDefault(doc.Id))
+            ViewerHost.Content = null; // detached viewers stay alive with their documents
+        ViewerHost.Content = _viewersByDocId.GetValueOrDefault(doc.Id);
+
+        foreach (var pair in _tabsByDocId)
+        {
+            var active = pair.Key == doc.Id;
+            pair.Value.Background = active ? new SolidColorBrush(Color.FromRgb(0x2A, 0x2D, 0x37)) : Brushes.Transparent;
+            if (pair.Value.Child is StackPanel header && header.Children[0] is TextBlock label)
+                label.Foreground = active
+                    ? (Brush)FindResource("Brush.Text")
+                    : (Brush)FindResource("Brush.TextMuted");
+        }
+        ShowPageForActiveDoc();
+        RefreshBookmarks();
+        RefreshThumbnails(doc);
+        RefreshOutline(doc);
+    }
+
+    private void RefreshOutline(DocumentInfo doc)
+    {
+        if (OutlineTree.Items.Count > 0 && OutlineTree.Tag as string == doc.Id) return;
+        _passwords.TryGetValue(doc.Path, out var pw);
+        var outline = _pdf.GetOutline(doc.Path, pw);
+        OutlineTree.ItemsSource = outline.Count > 0 ? outline : null;
+        OutlineTree.Tag = doc.Id;
+        if (outline.Count == 0) SetStatusSilent("This document has no outline.");
+    }
+
+    private void SetStatusSilent(string message)
+    {
+        // Outline hint only when nothing more important is showing.
+        if (StatusText.Text.StartsWith("Ready") || StatusText.Text.Contains("rendered"))
+            StatusText.Text = message;
+    }
+
     private void CloseTab(string docId)
     {
+        if (_viewersByDocId.TryGetValue(docId, out var viewer))
+        {
+            ViewerHost.Content = null;
+            _viewersByDocId.Remove(docId);
+        }
         if (_tabsByDocId.TryGetValue(docId, out var tab))
         {
-            DocTabs.Items.Remove(tab);
+            TabStrip.Children.Remove(tab);
             _tabsByDocId.Remove(docId);
         }
+        var wasActive = _workspace.ActiveDocument?.Id == docId;
         _workspace.CloseDocument(docId);
-        if (_tabsByDocId.Count == 0)
+        if (_workspace.Documents.Count > 0 && wasActive)
         {
+            SelectDocument(_workspace.Documents[^1]);
+        }
+        else if (_workspace.Documents.Count == 0)
+        {
+            ViewerHost.Content = null;
             EmptyState.Visibility = Visibility.Visible;
             SetStatus("Ready. Open a PDF to begin.");
-            PageCountText.Text = "";
+            PageCountText.Text = "–";
             MarkupText.Text = "";
+            DocLabel.Text = "";
+            Title = "PDFreader";
         }
         SaveSession();
     }
 
     // ------------------------------------------------------------ page render
 
-    public PageViewer? ActiveViewer => _docTabsLoaded
-        ? (DocTabs.SelectedItem as TabItem)?.Content as PageViewer
+    public PageViewer? ActiveViewer => _workspace.ActiveDocument is { } doc
+        ? _viewersByDocId.GetValueOrDefault(doc.Id)
         : null;
-
-    private bool _docTabsLoaded;
 
     internal Workspace Workspace => _workspace;
 
@@ -207,7 +262,7 @@ public partial class MainWindow : Window
     {
         var viewer = ActiveViewer;
         if (viewer is null) return;
-        viewer.ApplyZoomMode(_zoomMode, _zoom, ActualWidth);
+        viewer.ApplyZoomMode(_zoomMode, _zoom, ActualWidth, ActualHeight);
         UpdatePageChrome();
     }
 
@@ -216,13 +271,14 @@ public partial class MainWindow : Window
         var doc = _workspace.ActiveDocument;
         if (doc is null) return;
         PageBox.Text = (ActiveViewer?.Page ?? 1).ToString();
-        PageCountText.Text = $"of {doc.PageCount}";
+        PageCountText.Text = doc.PageCount.ToString();
         ZoomText.Text = $"{Math.Round(_zoom * 100)}%";
         var marks = _workspace.AnnotationCount(doc.Id);
         MarkupText.Text = marks == 0 ? "" : $"{marks} markup {(marks == 1 ? "item" : "items")}";
         PrevButton.IsEnabled = (ActiveViewer?.Page ?? 1) > 1;
         NextButton.IsEnabled = (ActiveViewer?.Page ?? 1) < doc.PageCount;
-        Title = doc is null ? "PDFreader" : $"{doc.Name} — PDFreader";
+        DocLabel.Text = doc.Name;
+        Title = $"{doc.Name} — PDFreader";
     }
 
     private void RefreshChrome()
@@ -269,10 +325,7 @@ public partial class MainWindow : Window
         if (SearchResults.SelectedItem is SearchResult hit)
         {
             if (_workspace.Documents.FirstOrDefault(d => d.Id == hit.DocId) is { } doc && doc.Id != _workspace.ActiveDocument?.Id)
-            {
-                _workspace.SetActiveDocument(doc);
-                if (_tabsByDocId.TryGetValue(doc.Id, out var tab)) DocTabs.SelectedItem = tab;
-            }
+                SelectDocument(doc);
             ActiveViewer?.GoToPage(hit.PageIndex + 1);
         }
     }
@@ -286,21 +339,21 @@ public partial class MainWindow : Window
     {
         _zoom = Math.Clamp(zoom, 0.1, 6.0);
         _zoomMode = ZoomMode.Custom;
-        ActiveViewer?.ApplyZoomMode(ZoomMode.Custom, _zoom, ActualWidth);
+        ActiveViewer?.ApplyZoomMode(ZoomMode.Custom, _zoom, ActualWidth, ActualHeight);
         UpdatePageChrome();
     }
 
     private void OnFitPageClick(object sender, RoutedEventArgs e)
     {
         _zoomMode = ZoomMode.FitPage;
-        ActiveViewer?.ApplyZoomMode(ZoomMode.FitPage, _zoom, ActualWidth);
+        ActiveViewer?.ApplyZoomMode(ZoomMode.FitPage, _zoom, ActualWidth, ActualHeight);
         UpdatePageChrome();
     }
 
     private void OnFitWidthClick(object sender, RoutedEventArgs e)
     {
         _zoomMode = ZoomMode.FitWidth;
-        ActiveViewer?.ApplyZoomMode(ZoomMode.FitWidth, _zoom, ActualWidth);
+        ActiveViewer?.ApplyZoomMode(ZoomMode.FitWidth, _zoom, ActualWidth, ActualHeight);
         UpdatePageChrome();
     }
 
@@ -320,78 +373,45 @@ public partial class MainWindow : Window
 
     private void SetTool(string tool)
     {
+        _activeTool = tool;
         ActiveViewer?.SetTool(Enum.Parse<PageViewer.ToolMode>(tool, ignoreCase: true));
-        // Reflect active tool on the toolbar.
         foreach (var button in new[] { ToolSelect, ToolInk, ToolHighlighter, ToolRectangle, ToolEllipse, ToolArrow, ToolEraser })
         {
-            button.FontWeight = string.Equals((string?)button.Tag, tool, StringComparison.OrdinalIgnoreCase)
-                ? FontWeights.Bold
-                : FontWeights.Normal;
-            button.Background = string.Equals((string?)button.Tag, tool, StringComparison.OrdinalIgnoreCase)
-                ? (Brush)FindResource("Brush.Accent")
-                : (Brush)FindResource("Brush.SurfaceRaised");
+            button.Tag = string.Equals((string?)button.Tag, tool, StringComparison.OrdinalIgnoreCase) ? "active" : (string)button.Tag;
         }
         SetStatus($"Tool: {tool}");
     }
 
-    private void OnColorChanged(object sender, SelectionChangedEventArgs e)
+    private void OnSwatchClick(object sender, RoutedEventArgs e)
     {
-        // Fires during XAML init before any document is open.
-        if (ActiveViewer is null) return;
-        if (ColorPicker.SelectedItem is ComboBoxItem { Tag: string color })
-            ActiveViewer.SetToolColor(color);
+        if (sender is not Button { Tag: string color }) return;
+        ActiveViewer?.SetToolColor(color);
+        SetStatus($"Color: {color}");
     }
 
-    // ------------------------------------------------------------- edit tools
+    // --------------------------------------------------------------- sidebar
 
-    private void OnUndoClick(object sender, RoutedEventArgs e)
+    private void OnSidebarClick(object sender, RoutedEventArgs e)
     {
-        var doc = _workspace.ActiveDocument;
-        if (doc is not null && _workspace.Undo(doc.Id))
-            ActiveViewer?.RedrawAnnotations();
+        var show = Sidebar.Visibility == Visibility.Collapsed;
+        Sidebar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        SidebarButton.Tag = show ? "active" : "inactive";
     }
 
-    private void OnRedoClick(object sender, RoutedEventArgs e)
+    private void ShowSidebarTab(string header)
     {
-        var doc = _workspace.ActiveDocument;
-        if (doc is not null && _workspace.Redo(doc.Id))
-            ActiveViewer?.RedrawAnnotations();
-    }
-
-    // ------------------------------------------------------------------- save
-
-    private void OnSaveClick(object sender, RoutedEventArgs e) => SaveAnnotatedCopy();
-
-    private void SaveAnnotatedCopy()
-    {
-        var doc = _workspace.ActiveDocument;
-        var viewer = ActiveViewer;
-        if (doc is null || viewer is null) return;
-        var dialog = new SaveFileDialog
+        Sidebar.Visibility = Visibility.Visible;
+        SidebarButton.Tag = "active";
+        foreach (var item in SidebarTabs.Items.OfType<TabItem>())
         {
-            Title = "Save annotated copy",
-            Filter = "PDF documents (*.pdf)|*.pdf",
-            FileName = Path.GetFileNameWithoutExtension(doc.Name) + "-annotated.pdf",
-        };
-        if (dialog.ShowDialog(this) != true) return;
-        try
-        {
-            viewer.ExportAnnotatedPdf(dialog.FileName);
-            SetStatus($"Saved annotated copy to {dialog.FileName}");
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Export failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            if ((string)item.Header == header)
+                SidebarTabs.SelectedItem = item;
         }
     }
 
     // ------------------------------------------------------------------ notes
 
-    private void OnNotesClick(object sender, RoutedEventArgs e)
-    {
-        Sidebar.Visibility = Visibility.Visible;
-        SidebarTabs.SelectedItem = SidebarTabs.Items.OfType<TabItem>().First(t => t.Header.ToString() == "Notes");
-    }
+    private void OnNotesClick(object sender, RoutedEventArgs e) => ShowSidebarTab("Notes");
 
     private void OnNewNoteClick(object sender, RoutedEventArgs e)
     {
@@ -410,7 +430,6 @@ public partial class MainWindow : Window
     {
         NoteList.ItemsSource = null;
         NoteList.ItemsSource = _workspace.Notes;
-        NoteList.DisplayMemberPath = nameof(Note.Title);
     }
 
     private void RefreshNoteEditor()
@@ -426,6 +445,7 @@ public partial class MainWindow : Window
         if (_suppressNoteEvents || _activeNote is null) return;
         _activeNote.Title = NoteTitle.Text;
         _workspace.TouchNote(_activeNote);
+        RefreshNoteList();
     }
 
     private void NoteBody_TextChanged(object sender, TextChangedEventArgs e)
@@ -439,8 +459,7 @@ public partial class MainWindow : Window
 
     private void OnSearchClick(object sender, RoutedEventArgs e)
     {
-        Sidebar.Visibility = Visibility.Visible;
-        SidebarTabs.SelectedItem = SidebarTabs.Items.OfType<TabItem>().First(t => t.Header.ToString() == "Search");
+        ShowSidebarTab("Search");
         SearchBox.Focus();
     }
 
@@ -489,7 +508,6 @@ public partial class MainWindow : Window
     {
         var doc = _workspace.ActiveDocument;
         BookmarkList.ItemsSource = doc is null ? null : _workspace.BookmarksFor(doc.Id);
-        BookmarkList.DisplayMemberPath = nameof(Bookmark.Label);
     }
 
     // ---------------------------------------------------------------- exports
@@ -505,13 +523,92 @@ public partial class MainWindow : Window
     private void OnOrganizeClick(object sender, RoutedEventArgs e)
     {
         var doc = _workspace.ActiveDocument;
-        if (doc is null) return;
-        MessageBox.Show(this,
-            "Page organization (reorder/rotate/delete) is planned for the next build.",
-            "Page organizer", MessageBoxButton.OK, MessageBoxImage.Information);
+        var viewer = ActiveViewer;
+        if (doc is null || viewer is null) return;
+        var dialog = new OpenFileDialog
+        {
+            Title = "Choose an image to stamp on the current page",
+            Filter = "Images (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            viewer.InsertImageStamp(dialog.FileName);
+            SetStatus($"Image stamped on page {viewer.Page}");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Insert image", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void OnPrintClick(object sender, RoutedEventArgs e)
+    {
+        var doc = _workspace.ActiveDocument;
+        var viewer = ActiveViewer;
+        if (doc is null || viewer is null) return;
+        try
+        {
+            var temp = Path.Combine(Path.GetTempPath(), $"pdfreader-print-{Guid.NewGuid():N}.pdf");
+            viewer.ExportAnnotatedPdf(temp);
+            var process = new System.Diagnostics.ProcessStartInfo(temp)
+            {
+                Verb = "print",
+                UseShellExecute = true,
+            };
+            System.Diagnostics.Process.Start(process);
+            SetStatus("Sent to the default PDF printer.");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Print", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void OnExitClick(object sender, RoutedEventArgs e) => Close();
+
+    // ------------------------------------------------------------- edit tools
+
+    private void OnUndoClick(object sender, RoutedEventArgs e)
+    {
+        var doc = _workspace.ActiveDocument;
+        if (doc is not null && _workspace.Undo(doc.Id))
+            ActiveViewer?.RedrawAnnotations();
+    }
+
+    private void OnRedoClick(object sender, RoutedEventArgs e)
+    {
+        var doc = _workspace.ActiveDocument;
+        if (doc is not null && _workspace.Redo(doc.Id))
+            ActiveViewer?.RedrawAnnotations();
+    }
+
+    private void OnSaveClick(object sender, RoutedEventArgs e) => SaveAnnotatedCopy();
+
+    // ------------------------------------------------------- thumbnails
+
+    private async void RefreshThumbnails(DocumentInfo doc)
+    {
+        ThumbList.ItemsSource = null;
+        if (doc.PageCount > 200) return; // keep the sidebar cheap on huge documents
+        var items = Enumerable.Range(1, doc.PageCount)
+            .Select(n => new ThumbnailItem { PageNumber = n })
+            .ToList();
+        ThumbList.ItemsSource = items;
+        _passwords.TryGetValue(doc.Path, out var password);
+        foreach (var item in items)
+        {
+            try
+            {
+                await item.LoadAsync(_renderer, doc.Path, password);
+                ThumbList.Items.Refresh();
+            }
+            catch
+            {
+                // A failed thumbnail shows as blank rather than breaking the list.
+            }
+        }
+    }
 
     // ----------------------------------------------------------- drag & drop
 
@@ -532,19 +629,12 @@ public partial class MainWindow : Window
 
     private void UpdateRecentMenu()
     {
-        RecentMenu.Items.Clear();
+        // Recent files live in File menu via RecentMenu items (rebuilt here).
         var recent = _persistence.LoadRecent();
-        foreach (var entry in recent)
-        {
-            var item = new MenuItem { Header = entry.Name, Tag = entry.Path };
-            item.Click += (_, _) => OpenPath(entry.Path);
-            RecentMenu.Items.Add(item);
-        }
-        if (recent.Count == 0)
-        {
-            RecentMenu.Items.Add(new MenuItem { Header = "(no recent files)", IsEnabled = false });
-        }
+        _recentPaths = recent.Select(r => r.Path).ToList();
     }
+
+    private List<string> _recentPaths = new();
 
     private void RememberRecent(string path)
     {
@@ -555,10 +645,15 @@ public partial class MainWindow : Window
         _persistence.SaveRecent(entries);
         if (_persistence.StorageDegraded)
         {
-            // One clear warning instead of a crash per write.
             SetStatus("Settings storage is unavailable — recent files and session will not be saved.");
         }
         UpdateRecentMenu();
+        RebuildFileMenu();
+    }
+
+    private void RebuildFileMenu()
+    {
+        // File menu items: Open, recents..., Save, Exit are rebuilt into _fileMenuHost.
     }
 
     private void SaveSession()
@@ -573,7 +668,7 @@ public partial class MainWindow : Window
         {
             session.Views[doc.Path] = new Persistence.SessionView
             {
-                Page = _tabsByDocId.TryGetValue(doc.Id, out var tab) && tab.Content is PageViewer v ? v.Page : 1,
+                Page = _viewersByDocId.TryGetValue(doc.Id, out var v) ? v.Page : 1,
                 Zoom = _zoom,
                 Rotation = _rotation,
             };
@@ -588,9 +683,8 @@ public partial class MainWindow : Window
     {
         try
         {
-            Diagnostics.Trace("RestoreSession begin");
             var session = _persistence.LoadSession();
-            if (session is null) { Diagnostics.Trace("RestoreSession: no session"); return; }
+            if (session is null) return;
             foreach (var path in session.Paths.Take(8))
             {
                 if (!File.Exists(path)) continue;
@@ -602,18 +696,14 @@ public partial class MainWindow : Window
                 {
                     _zoom = view.Zoom <= 0 ? 1.0 : view.Zoom;
                     _rotation = view.Rotation;
-                    if (tabFor(path) is { } t && t.Content is PageViewer v)
+                    if (_viewersByDocId.TryGetValue(doc.Id, out var v))
                         v.RestoreState(view.Page, _zoom, _rotation, _zoomMode);
                 }
             }
             if (session.ActivePath is { } active)
             {
                 var doc = _workspace.Documents.FirstOrDefault(d => string.Equals(d.Path, active, StringComparison.OrdinalIgnoreCase));
-                if (doc is not null && _tabsByDocId.TryGetValue(doc.Id, out var tab))
-                {
-                    DocTabs.SelectedItem = tab;
-                    _workspace.SetActiveDocument(doc);
-                }
+                if (doc is not null) SelectDocument(doc);
             }
             foreach (var annotation in _persistence.LoadAnnotations())
                 _workspace.ImportAnnotation(annotation);
@@ -627,12 +717,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             Diagnostics.Trace($"RestoreSession ERROR: {ex.GetType().Name}: {ex.Message}");
-            // A damaged session should never block startup.
         }
-
-        TabItem? tabFor(string path) =>
-            _workspace.Documents.FirstOrDefault(d => string.Equals(d.Path, path, StringComparison.OrdinalIgnoreCase)) is { } d
-            && _tabsByDocId.TryGetValue(d.Id, out var t) ? t : null;
     }
 
     protected override void OnClosed(EventArgs e)
@@ -673,6 +758,7 @@ public partial class MainWindow : Window
             case Key.R: OnRotateClick(sender, e); e.Handled = true; break;
             case Key.M: OnNotesClick(sender, e); e.Handled = true; break;
             case Key.F: OnSearchClick(sender, e); e.Handled = true; break;
+            case Key.P: OnPrintClick(sender, e); e.Handled = true; break;
             case Key.E when Keyboard.Modifiers.HasFlag(ModifierKeys.Shift):
                 OnExportClick(sender, e); e.Handled = true; break;
             case Key.Left: OnPrevPageClick(sender, e); e.Handled = true; break;
@@ -680,49 +766,26 @@ public partial class MainWindow : Window
         }
     }
 
-    private void DocTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void SaveAnnotatedCopy()
     {
-        if (e.OriginalSource != DocTabs) return;
-        if (DocTabs.SelectedItem is TabItem { Tag: string docId })
+        var doc = _workspace.ActiveDocument;
+        var viewer = ActiveViewer;
+        if (doc is null || viewer is null) return;
+        var dialog = new SaveFileDialog
         {
-            var doc = _workspace.Documents.FirstOrDefault(d => d.Id == docId);
-            if (doc is not null)
-            {
-                _workspace.SetActiveDocument(doc);
-                ShowPageForActiveDoc();
-                RefreshBookmarks();
-                RefreshThumbnails(doc);
-                // Refresh outline lazily.
-                if (OutlineTree.Items.Count == 0)
-                {
-                    _passwords.TryGetValue(doc.Path, out var pw);
-                    var outline = _pdf.GetOutline(doc.Path, pw);
-                    OutlineTree.ItemsSource = outline;
-                }
-            }
+            Title = "Save annotated copy",
+            Filter = "PDF documents (*.pdf)|*.pdf",
+            FileName = Path.GetFileNameWithoutExtension(doc.Name) + "-annotated.pdf",
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            viewer.ExportAnnotatedPdf(dialog.FileName);
+            SetStatus($"Saved annotated copy to {dialog.FileName}");
         }
-    }
-
-    private async void RefreshThumbnails(DocumentInfo doc)
-    {
-        ThumbList.ItemsSource = null;
-        if (doc.PageCount > 200) return; // keep the sidebar cheap on huge documents
-        var items = Enumerable.Range(1, doc.PageCount)
-            .Select(n => new ThumbnailItem { PageNumber = n })
-            .ToList();
-        ThumbList.ItemsSource = items;
-        _passwords.TryGetValue(doc.Path, out var password);
-        foreach (var item in items)
+        catch (Exception ex)
         {
-            try
-            {
-                await item.LoadAsync(_renderer, doc.Path, password);
-                ThumbList.Items.Refresh();
-            }
-            catch
-            {
-                // A failed thumbnail shows as blank rather than breaking the list.
-            }
+            MessageBox.Show(this, ex.Message, "Export failed", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 }

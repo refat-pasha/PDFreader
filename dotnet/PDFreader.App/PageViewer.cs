@@ -621,6 +621,25 @@ public sealed class PageViewer : Border
 
     public void SetPageSize((double W, double H) size) => _pagePointSize = size;
 
+    /// <summary>Stamps an image at the center of the current page (annotation kind Image).</summary>
+    public void InsertImageStamp(string imagePath)
+    {
+        if (!File.Exists(imagePath)) throw new FileNotFoundException(imagePath);
+        var bytes = File.ReadAllBytes(imagePath);
+        // Default placement: center at half page size.
+        var (w, h) = _pagePointSize;
+        _workspace.AddAnnotation(new Annotation
+        {
+            Id = $"ann-{Guid.NewGuid():N}",
+            DocId = _doc.Id,
+            PageIndex = Page - 1,
+            Kind = AnnotationKind.Image,
+            Color = "#FFFFFF",
+            Points = new List<PointD> { new(w / 4, h / 4), new(w * 3 / 4, h * 3 / 4) },
+            ImageData = bytes,
+        });
+    }
+
     /// <summary>Exports the current document with annotations flattened via page images.</summary>
     public void ExportAnnotatedPdf(string targetPath)
     {
