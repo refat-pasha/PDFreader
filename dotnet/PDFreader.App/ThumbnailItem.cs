@@ -1,4 +1,5 @@
 using System.IO;
+using System.Windows;
 using System.Windows.Media.Imaging;
 using PDFreader.Core;
 
@@ -10,6 +11,9 @@ public sealed class ThumbnailItem
     public required int PageNumber { get; init; }
     public BitmapImage? Image { get; private set; }
     public bool Loaded { get; private set; }
+
+    /// <summary>Shown for the page currently open in the viewer.</summary>
+    public Visibility ReadingVisibility { get; set; } = Visibility.Collapsed;
 
     public async Task LoadAsync(PdfRenderer renderer, string path, string? password)
     {

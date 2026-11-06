@@ -391,27 +391,82 @@ public partial class MainWindow : Window
 
     // --------------------------------------------------------------- sidebar
 
-    private void OnSidebarClick(object sender, RoutedEventArgs e)
+    private void ShowSidebarTab(string panel)
     {
-        var show = Sidebar.Visibility == Visibility.Collapsed;
-        Sidebar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        SidebarButton.Tag = show ? "active" : "inactive";
-    }
-
-    private void ShowSidebarTab(string header)
-    {
-        Sidebar.Visibility = Visibility.Visible;
+        Rail.Visibility = Visibility.Visible;
+        SidePanel.Visibility = Visibility.Visible;
         SidebarButton.Tag = "active";
-        foreach (var item in SidebarTabs.Items.OfType<TabItem>())
+        PanelPages.Visibility = panel == "pages" ? Visibility.Visible : Visibility.Collapsed;
+        OutlineTree.Visibility = panel == "outline" ? Visibility.Visible : Visibility.Collapsed;
+        PanelSearch.Visibility = panel == "search" ? Visibility.Visible : Visibility.Collapsed;
+        PanelNotes.Visibility = panel == "notes" ? Visibility.Visible : Visibility.Collapsed;
+        PanelBookmarks.Visibility = panel == "bookmarks" ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var button in new[] { RailPages, RailOutline, RailSearch, RailNotes, RailBookmarks })
         {
-            if ((string)item.Header == header)
-                SidebarTabs.SelectedItem = item;
+            var name = button.Tag as string ?? "";
+            var isActive = name.Contains(panel);
+            button.Tag = isActive ? name.Replace(panel, panel + " active") : name;
         }
     }
 
-    // ------------------------------------------------------------------ notes
+    private void OnRailClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag }) return;
+        var panel = tag.Split(' ')[0];
+        // Toggle closed when clicking the already-active rail button.
+        if (SidePanel.Visibility == Visibility.Visible && (RailPages.Tag as string)?.Contains("active") == true && panel == "pages")
+        {
+            SidePanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+        ShowSidebarTab(panel);
+        if (panel == "search") SearchBox.Focus();
+    }
 
-    private void OnNotesClick(object sender, RoutedEventArgs e) => ShowSidebarTab("Notes");
+    private void OnSidebarClick(object sender, RoutedEventArgs e)
+    {
+        var show = SidePanel.Visibility == Visibility.Collapsed;
+        SidePanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        SidebarButton.Tag = show ? "active" : "inactive";
+    }
+
+    private async void RefreshThumbnails(DocumentInfo doc)
+    {
+        PageCountBadge.Text = doc.PageCount.ToString();
+        ThumbList.ItemsSource = null;
+        if (doc.PageCount > 300) return;
+        var items = Enumerable.Range(1, doc.PageCount)
+            .Select(n => new ThumbnailItem { PageNumber = n })
+            .ToList();
+        ThumbList.ItemsSource = items;
+        _thumbnailItems = items;
+        _passwords.TryGetValue(doc.Path, out var password);
+        foreach (var item in items)
+        {
+            if (_workspace.ActiveDocument?.Id != doc.Id) return; // user switched away
+            try
+            {
+                await item.LoadAsync(_renderer, doc.Path, password);
+                item.ReadingVisibility = item.PageNumber == (ActiveViewer?.Page ?? 1)
+                    ? Visibility.Visible : Visibility.Collapsed;
+                ThumbList.Items.Refresh();
+            }
+            catch { }
+        }
+    }
+
+    private List<ThumbnailItem>? _thumbnailItems;
+
+    private void UpdateReadingBadge()
+    {
+        if (_thumbnailItems is null) return;
+        var current = ActiveViewer?.Page ?? 1;
+        foreach (var item in _thumbnailItems)
+            item.ReadingVisibility = item.PageNumber == current ? Visibility.Visible : Visibility.Collapsed;
+        ThumbList.Items.Refresh();
+    }
+
+    private void OnNotesClick(object sender, RoutedEventArgs e) => ShowSidebarTab("notes");
 
     private void OnNewNoteClick(object sender, RoutedEventArgs e)
     {
@@ -522,6 +577,7 @@ public partial class MainWindow : Window
 
     private void OnOrganizeClick(object sender, RoutedEventArgs e)
     {
+        // Insert-image flow (renamed button in the app bar).
         var doc = _workspace.ActiveDocument;
         var viewer = ActiveViewer;
         if (doc is null || viewer is null) return;
@@ -541,6 +597,8 @@ public partial class MainWindow : Window
             MessageBox.Show(this, ex.Message, "Insert image", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
+
+    private void OnInsertImageClick(object sender, RoutedEventArgs e) => OnOrganizeClick(sender, e);
 
     private void OnPrintClick(object sender, RoutedEventArgs e)
     {
@@ -584,31 +642,6 @@ public partial class MainWindow : Window
     }
 
     private void OnSaveClick(object sender, RoutedEventArgs e) => SaveAnnotatedCopy();
-
-    // ------------------------------------------------------- thumbnails
-
-    private async void RefreshThumbnails(DocumentInfo doc)
-    {
-        ThumbList.ItemsSource = null;
-        if (doc.PageCount > 200) return; // keep the sidebar cheap on huge documents
-        var items = Enumerable.Range(1, doc.PageCount)
-            .Select(n => new ThumbnailItem { PageNumber = n })
-            .ToList();
-        ThumbList.ItemsSource = items;
-        _passwords.TryGetValue(doc.Path, out var password);
-        foreach (var item in items)
-        {
-            try
-            {
-                await item.LoadAsync(_renderer, doc.Path, password);
-                ThumbList.Items.Refresh();
-            }
-            catch
-            {
-                // A failed thumbnail shows as blank rather than breaking the list.
-            }
-        }
-    }
 
     // ----------------------------------------------------------- drag & drop
 

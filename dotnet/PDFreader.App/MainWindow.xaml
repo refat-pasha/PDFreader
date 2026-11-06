@@ -8,7 +8,6 @@
         PreviewKeyDown="Window_PreviewKeyDown"
         AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver">
     <Window.Resources>
-        <!-- Icon glyph helper: text-based glyphs keep the app dependency-free -->
         <Style x:Key="Glyph" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe MDL2 Assets, Segoe UI Symbol"/>
             <Setter Property="FontSize" Value="12"/>
@@ -17,199 +16,97 @@
         <Style x:Key="ToolGlyph" TargetType="TextBlock" BasedOn="{StaticResource Glyph}">
             <Setter Property="FontSize" Value="13"/>
         </Style>
+        <Style x:Key="RailButton" TargetType="Button" BasedOn="{StaticResource ToggleButtonStyle}">
+            <Setter Property="Width" Value="44"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
     </Window.Resources>
     <DockPanel>
         <!-- ===== App bar ===== -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource Brush.Chrome}" Padding="8,5">
-            <StackPanel Orientation="Horizontal">
-                <!-- Brand -->
-                <StackPanel Orientation="Horizontal" Margin="0,0,10,0" VerticalAlignment="Center">
-                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8A5;" FontSize="14"
-                               Foreground="{StaticResource Brush.Accent}" VerticalAlignment="Center"/>
-                    <TextBlock Text="PDFreader" Margin="7,0,0,0" FontWeight="SemiBold" FontSize="13"
-                               VerticalAlignment="Center"/>
+        <Border DockPanel.Dock="Top" Background="{StaticResource Brush.Chrome}" Padding="10,6">
+            <Grid>
+                <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,14,0" VerticalAlignment="Center">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8A5;" FontSize="14"
+                                   Foreground="{StaticResource Brush.Accent}" VerticalAlignment="Center"/>
+                        <TextBlock Text="PDFreader" Margin="8,0,0,0" FontWeight="SemiBold" FontSize="13"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Button Click="OnOpenClick" ToolTip="Open (Ctrl+O)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE8E5;"/>
+                            <TextBlock Text="Open" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="SaveButton" Click="OnSaveClick" ToolTip="Save annotated copy (Ctrl+S)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE74E;"/>
+                            <TextBlock Text="Save" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnExportClick" ToolTip="Export (Ctrl+Shift+E)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE898;"/>
+                            <TextBlock Text="Export" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnPrintClick" ToolTip="Print (Ctrl+P)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE749;"/>
+                            <TextBlock Text="Print" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Separator Style="{StaticResource ChromeSeparator}"/>
+                    <Button Click="OnUndoClick" ToolTip="Undo (Ctrl+Z)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE7A7;"/>
+                            <TextBlock Text="Undo" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnRedoClick" ToolTip="Redo (Ctrl+Y)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE7A6;"/>
+                            <TextBlock Text="Redo" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Separator Style="{StaticResource ChromeSeparator}"/>
+                    <Button x:Name="SidebarButton" Click="OnSidebarClick" ToolTip="Toggle sidebar" Tag="active">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE700;"/>
+                            <TextBlock Text="Sidebar" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnNotesClick" ToolTip="Notebook (Ctrl+M)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE70B;"/>
+                            <TextBlock Text="Notes" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnInsertImageClick" ToolTip="Stamp an image on the current page">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE91B;"/>
+                            <TextBlock Text="Insert image" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
-                <Button Click="OnOpenClick" ToolTip="Open (Ctrl+O)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE8E5;"/>
-                        <TextBlock Text="Open" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <Button x:Name="SaveButton" Click="OnSaveClick" ToolTip="Save annotated copy (Ctrl+S)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE74E;"/>
-                        <TextBlock Text="Save" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <Button Click="OnPrintClick" ToolTip="Print (Ctrl+P)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE749;"/>
-                        <TextBlock Text="Print" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <Separator Style="{StaticResource ChromeSeparator}"/>
-                <Button Click="OnUndoClick" ToolTip="Undo (Ctrl+Z)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE7A7;"/>
-                        <TextBlock Text="Undo" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <Button Click="OnRedoClick" ToolTip="Redo (Ctrl+Y)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE7A6;"/>
-                        <TextBlock Text="Redo" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <Button Click="OnRotateClick" ToolTip="Rotate 90° (Ctrl+R)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE7AD;"/>
-                        <TextBlock Text="Rotate" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <Button x:Name="SidebarButton" Click="OnSidebarClick" ToolTip="Toggle sidebar" Tag="active">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE700;"/>
-                        <TextBlock Text="Sidebar" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <Button Click="OnNotesClick" ToolTip="Notebook (Ctrl+M)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE70B;"/>
-                        <TextBlock Text="Notes" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <Button Click="OnExportClick" ToolTip="Export (Ctrl+Shift+E)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE898;"/>
-                        <TextBlock Text="Export" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <Button Click="OnOrganizeClick" ToolTip="Organize pages">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE8FD;"/>
-                        <TextBlock Text="Insert image" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <!-- Spacer + document label -->
-                <TextBlock x:Name="DocLabel" Margin="16,0,0,0" VerticalAlignment="Center"
+                <TextBlock x:Name="DocLabel" HorizontalAlignment="Right" VerticalAlignment="Center"
                            Foreground="{StaticResource Brush.TextMuted}" FontSize="12"/>
-            </StackPanel>
+            </Grid>
         </Border>
 
         <!-- ===== Document tabs ===== -->
         <Border DockPanel.Dock="Top" Background="{StaticResource Brush.Chrome}"
                 BorderBrush="{StaticResource Brush.BorderSubtle}" BorderThickness="0,0,0,1">
             <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden">
-                <StackPanel Orientation="Horizontal" Margin="8,4,4,0">
+                <StackPanel Orientation="Horizontal" Margin="10,6,4,0">
                     <StackPanel x:Name="TabStrip" Orientation="Horizontal"/>
-                    <Button Click="OnOpenClick" ToolTip="New tab (open PDF)" Height="26" Width="26" Margin="4,0,0,4"
+                    <Button Click="OnOpenClick" ToolTip="New tab (open PDF)" Height="28" Width="28"
                             Style="{StaticResource ToggleButtonStyle}">
                         <TextBlock Style="{StaticResource Glyph}" Text="&#xE710;" FontSize="11"/>
                     </Button>
                 </StackPanel>
             </ScrollViewer>
-        </Border>
-
-        <!-- ===== Page toolbar ===== -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource Brush.Chrome}"
-                BorderBrush="{StaticResource Brush.BorderSubtle}" BorderThickness="0,0,0,1" Padding="8,4">
-            <StackPanel Orientation="Horizontal">
-                <!-- Navigation -->
-                <Button Click="OnPrevPageClick" x:Name="PrevButton" ToolTip="Previous page (Page Up)" Width="28">
-                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE76B;"/>
-                </Button>
-                <Border Background="{StaticResource Brush.SurfaceRaised}" CornerRadius="5" Margin="4,0"
-                        VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBox x:Name="PageBox" Width="40" TextAlignment="Center" KeyDown="PageBox_KeyDown"
-                                 Background="Transparent" BorderThickness="0" Margin="2,3"/>
-                        <TextBlock Text="/" Foreground="{StaticResource Brush.TextMuted}" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="PageCountText" Foreground="{StaticResource Brush.TextMuted}"
-                                   VerticalAlignment="Center" Margin="4,0,8,0" Text="–"/>
-                    </StackPanel>
-                </Border>
-                <Button Click="OnNextPageClick" x:Name="NextButton" ToolTip="Next page (Page Down)" Width="28">
-                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE76C;"/>
-                </Button>
-                <Separator Style="{StaticResource ChromeSeparator}"/>
-                <!-- Zoom -->
-                <Button Click="OnZoomOutClick" ToolTip="Zoom out (Ctrl+-)" Width="28">
-                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE738;"/>
-                </Button>
-                <TextBlock x:Name="ZoomText" VerticalAlignment="Center" MinWidth="42" TextAlignment="Center"
-                           Foreground="{StaticResource Brush.TextSecondary}">100%</TextBlock>
-                <Button Click="OnZoomInClick" ToolTip="Zoom in (Ctrl++)" Width="28">
-                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE8F4;"/>
-                </Button>
-                <Button Click="OnFitWidthClick" ToolTip="Fit width (Ctrl+1)" Width="28">
-                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE8A9;"/>
-                </Button>
-                <Button Click="OnFitPageClick" ToolTip="Fit page (Ctrl+2)" Width="28">
-                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE740;"/>
-                </Button>
-                <Separator Style="{StaticResource ChromeSeparator}"/>
-                <!-- Annotation tools -->
-                <Button x:Name="ToolSelect" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Select"
-                        ToolTip="Select / pan" Width="30" FontWeight="Normal">
-                    <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE7B3;"/>
-                </Button>
-                <Button x:Name="ToolInk" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Ink"
-                        ToolTip="Pen" Width="30">
-                    <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE70F;"/>
-                </Button>
-                <Button x:Name="ToolHighlighter" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Highlighter"
-                        ToolTip="Highlighter" Width="30">
-                    <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE865;"/>
-                </Button>
-                <Button x:Name="ToolRectangle" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Rectangle"
-                        ToolTip="Rectangle" Width="30">
-                    <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE371;"/>
-                </Button>
-                <Button x:Name="ToolEllipse" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Ellipse"
-                        ToolTip="Ellipse" Width="30">
-                    <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE2E5;"/>
-                </Button>
-                <Button x:Name="ToolArrow" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Arrow"
-                        ToolTip="Arrow" Width="30">
-                    <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE727;"/>
-                </Button>
-                <Button x:Name="ToolEraser" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Eraser"
-                        ToolTip="Eraser" Width="30">
-                    <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE75C;"/>
-                </Button>
-                <!-- Color swatches -->
-                <Border Background="{StaticResource Brush.SurfaceRaised}" CornerRadius="5" Margin="6,0"
-                        VerticalAlignment="Center" Padding="6,4">
-                    <StackPanel Orientation="Horizontal">
-                        <Button x:Name="Swatch1" Click="OnSwatchClick" Tag="#F7768E" Width="18" Height="18"
-                                Background="#F7768E" BorderBrush="#3A3E4B" BorderThickness="1"
-                                Padding="0" MinHeight="0" MinWidth="0" ToolTip="Coral"/>
-                        <Button x:Name="Swatch2" Click="OnSwatchClick" Tag="#FAB387" Width="18" Height="18" Margin="4,0,0,0"
-                                Background="#FAB387" BorderBrush="#3A3E4B" BorderThickness="1"
-                                Padding="0" MinHeight="0" MinWidth="0" ToolTip="Peach"/>
-                        <Button x:Name="Swatch3" Click="OnSwatchClick" Tag="#A6E3A1" Width="18" Height="18" Margin="4,0,0,0"
-                                Background="#A6E3A1" BorderBrush="#3A3E4B" BorderThickness="1"
-                                Padding="0" MinHeight="0" MinWidth="0" ToolTip="Mint"/>
-                        <Button x:Name="Swatch4" Click="OnSwatchClick" Tag="#89DCEB" Width="18" Height="18" Margin="4,0,0,0"
-                                Background="#89DCEB" BorderBrush="#3A3E4B" BorderThickness="1"
-                                Padding="0" MinHeight="0" MinWidth="0" ToolTip="Sky"/>
-                        <Button x:Name="Swatch5" Click="OnSwatchClick" Tag="#89B4FA" Width="18" Height="18" Margin="4,0,0,0"
-                                Background="#89B4FA" BorderBrush="#3A3E4B" BorderThickness="1"
-                                Padding="0" MinHeight="0" MinWidth="0" ToolTip="Blue"/>
-                        <Button x:Name="Swatch6" Click="OnSwatchClick" Tag="#111111" Width="18" Height="18" Margin="4,0,0,0"
-                                Background="#111111" BorderBrush="#3A3E4B" BorderThickness="1"
-                                Padding="0" MinHeight="0" MinWidth="0" ToolTip="Black"/>
-                    </StackPanel>
-                </Border>
-                <Separator Style="{StaticResource ChromeSeparator}"/>
-                <!-- Sidebar tabs -->
-                <Button Click="OnSearchClick" ToolTip="Search (Ctrl+F)">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE721;"/>
-                        <TextBlock Text="Search" Margin="6,0,0,0"/>
-                    </StackPanel>
-                </Button>
-            </StackPanel>
         </Border>
 
         <!-- ===== Status bar ===== -->
@@ -223,114 +120,247 @@
             </Grid>
         </Border>
 
-        <!-- ===== Body ===== -->
+        <!-- ===== Body: rail + panel + viewer ===== -->
         <Grid>
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" x:Name="Sidebar" Width="260" Background="{StaticResource Brush.Surface}"
-                    BorderBrush="{StaticResource Brush.BorderSubtle}" BorderThickness="0,0,1,0" Visibility="Collapsed">
-                <TabControl x:Name="SidebarTabs" Background="Transparent" Padding="0"
-                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                    <TabControl.ItemContainerStyle>
-                        <Style TargetType="TabItem">
-                            <Setter Property="Foreground" Value="{StaticResource Brush.TextMuted}"/>
-                            <Setter Property="FontSize" Value="11"/>
-                            <Setter Property="Padding" Value="10,7"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="TabItem">
-                                        <Border x:Name="Bd" Background="Transparent" BorderThickness="0,0,0,2"
-                                                BorderBrush="Transparent" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center"/>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Brush.Accent}"/>
-                                                <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
-                                            </Trigger>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </TabControl.ItemContainerStyle>
-                    <TabItem Header="Pages">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <ListBox x:Name="ThumbList" SelectionChanged="ThumbList_SelectionChanged">
+            <!-- Icon rail -->
+            <Border Grid.Column="0" x:Name="Rail" Width="48" Background="{StaticResource Brush.Chrome}"
+                    BorderBrush="{StaticResource Brush.BorderSubtle}" BorderThickness="0,0,1,0">
+                <StackPanel Margin="0,6">
+                    <Button x:Name="RailPages" Style="{StaticResource RailButton}" Click="OnRailClick" Tag="pages active"
+                            ToolTip="Pages"><TextBlock Style="{StaticResource Glyph}" Text="&#xE8A9;"/></Button>
+                    <Button x:Name="RailOutline" Style="{StaticResource RailButton}" Click="OnRailClick" Tag="outline"
+                            ToolTip="Outline"><TextBlock Style="{StaticResource Glyph}" Text="&#xE8FD;"/></Button>
+                    <Button x:Name="RailSearch" Style="{StaticResource RailButton}" Click="OnRailClick" Tag="search"
+                            ToolTip="Search (Ctrl+F)"><TextBlock Style="{StaticResource Glyph}" Text="&#xE721;"/></Button>
+                    <Button x:Name="RailNotes" Style="{StaticResource RailButton}" Click="OnRailClick" Tag="notes"
+                            ToolTip="Notes (Ctrl+M)"><TextBlock Style="{StaticResource Glyph}" Text="&#xE70B;"/></Button>
+                    <Button x:Name="RailBookmarks" Style="{StaticResource RailButton}" Click="OnRailClick" Tag="bookmarks"
+                            ToolTip="Bookmarks"><TextBlock Style="{StaticResource Glyph}" Text="&#xE718;"/></Button>
+                </StackPanel>
+            </Border>
+
+            <!-- Side panel -->
+            <Border Grid.Column="1" x:Name="SidePanel" Width="224" Background="{StaticResource Brush.Surface}"
+                    BorderBrush="{StaticResource Brush.BorderSubtle}" BorderThickness="0,0,1,0">
+                <Grid>
+                    <!-- Pages -->
+                    <Grid x:Name="PanelPages">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" Margin="12,10,12,6">
+                            <TextBlock DockPanel.Dock="Right" x:Name="PageCountBadge" FontSize="11"
+                                       Foreground="{StaticResource Brush.TextMuted}"/>
+                            <TextBlock Text="PAGES" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource Brush.TextMuted}"/>
+                        </DockPanel>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <ListBox x:Name="ThumbList" SelectionChanged="ThumbList_SelectionChanged"
+                                     BorderThickness="0" Background="Transparent">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Margin="2">
-                                            <Border Width="120" Height="160" Background="{StaticResource Brush.Viewport}"
-                                                    BorderBrush="{StaticResource Brush.BorderSubtle}" BorderThickness="1"
-                                                    CornerRadius="3">
+                                        <StackPanel Margin="10,3">
+                                            <Border Background="#FAFAF8" BorderBrush="{StaticResource Brush.BorderSubtle}"
+                                                    BorderThickness="1" CornerRadius="2">
                                                 <Image Source="{Binding Image}" Stretch="Uniform"/>
                                             </Border>
-                                            <TextBlock Text="{Binding PageNumber}" HorizontalAlignment="Center"
-                                                       Foreground="{StaticResource Brush.TextMuted}" FontSize="10"
-                                                       Margin="0,4,0,2"/>
+                                            <Grid Margin="2,4,2,6">
+                                                <TextBlock Text="{Binding PageNumber}" FontSize="11"
+                                                           Foreground="{StaticResource Brush.TextSecondary}"/>
+                                                <TextBlock Text="Reading" FontSize="10" HorizontalAlignment="Right"
+                                                           Foreground="{StaticResource Brush.Accent}"
+                                                           Visibility="{Binding ReadingVisibility}"/>
+                                            </Grid>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
                         </ScrollViewer>
-                    </TabItem>
-                    <TabItem Header="Outline">
-                        <TreeView x:Name="OutlineTree" SelectedItemChanged="OutlineTree_SelectedItemChanged"
-                                  Margin="6,4"/>
-                    </TabItem>
-                    <TabItem Header="Bookmarks">
+                    </Grid>
+                    <!-- Outline -->
+                    <TreeView x:Name="OutlineTree" Visibility="Collapsed" Margin="8,8"
+                              SelectedItemChanged="OutlineTree_SelectedItemChanged"/>
+                    <!-- Search -->
+                    <DockPanel x:Name="PanelSearch" Visibility="Collapsed" Margin="10,10">
+                        <DockPanel DockPanel.Dock="Top">
+                            <TextBox x:Name="SearchBox" KeyDown="SearchBox_KeyDown" VerticalAlignment="Center"/>
+                            <Button DockPanel.Dock="Right" Click="OnSearchSubmitClick" ToolTip="Search" Margin="6,0,0,0">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE721;"/>
+                            </Button>
+                        </DockPanel>
+                        <ListBox x:Name="SearchResults" SelectionChanged="SearchResults_SelectionChanged" Margin="0,10,0,0"/>
+                    </DockPanel>
+                    <!-- Bookmarks -->
+                    <DockPanel x:Name="PanelBookmarks" Visibility="Collapsed" Margin="10,10">
+                        <DockPanel DockPanel.Dock="Top">
+                            <Button DockPanel.Dock="Right" Click="OnAddBookmarkClick" ToolTip="Bookmark current page">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE718;"/>
+                            </Button>
+                            <TextBox x:Name="BookmarkBox" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        </DockPanel>
+                        <ListBox x:Name="BookmarkList" SelectionChanged="BookmarkList_SelectionChanged"
+                                 DisplayMemberPath="Label" Margin="0,10,0,0"/>
+                    </DockPanel>
+                    <!-- Notes -->
+                    <DockPanel x:Name="PanelNotes" Visibility="Collapsed" Margin="10,10">
+                        <DockPanel DockPanel.Dock="Top">
+                            <Button DockPanel.Dock="Right" Click="OnNewNoteClick" ToolTip="New note">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE710;"/>
+                            </Button>
+                            <TextBlock Text="NOTEBOOK" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource Brush.TextMuted}" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <ListBox DockPanel.Dock="Top" x:Name="NoteList" Height="120" Margin="0,8,0,0"
+                                 SelectionChanged="NoteList_SelectionChanged" DisplayMemberPath="Title"/>
                         <DockPanel>
-                            <DockPanel DockPanel.Dock="Top" Margin="8,6">
-                                <Button DockPanel.Dock="Right" Click="OnAddBookmarkClick" ToolTip="Bookmark current page">
-                                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE718;"/>
-                                </Button>
-                                <TextBox x:Name="BookmarkBox" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            </DockPanel>
-                            <ListBox x:Name="BookmarkList" SelectionChanged="BookmarkList_SelectionChanged"
-                                     DisplayMemberPath="Label"/>
+                            <TextBox DockPanel.Dock="Top" x:Name="NoteTitle" TextChanged="NoteTitle_TextChanged" Margin="0,4,0,6"/>
+                            <TextBox x:Name="NoteBody" AcceptsReturn="True" TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto" TextChanged="NoteBody_TextChanged"/>
                         </DockPanel>
-                    </TabItem>
-                    <TabItem Header="Notes">
-                        <DockPanel>
-                            <DockPanel DockPanel.Dock="Top" Margin="8,6">
-                                <Button DockPanel.Dock="Right" Click="OnNewNoteClick" ToolTip="New note">
-                                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE710;"/>
-                                </Button>
-                                <ListBox x:Name="NoteList" Height="130" SelectionChanged="NoteList_SelectionChanged"
-                                         DisplayMemberPath="Title"/>
-                            </DockPanel>
-                            <DockPanel Margin="8,0,8,8">
-                                <TextBox DockPanel.Dock="Top" x:Name="NoteTitle" TextChanged="NoteTitle_TextChanged"
-                                         Margin="0,6,0,6"/>
-                                <TextBox x:Name="NoteBody" AcceptsReturn="True" TextWrapping="Wrap"
-                                         VerticalScrollBarVisibility="Auto" TextChanged="NoteBody_TextChanged"/>
-                            </DockPanel>
-                        </DockPanel>
-                    </TabItem>
-                    <TabItem Header="Search">
-                        <DockPanel Margin="8,6">
-                            <DockPanel DockPanel.Dock="Top">
-                                <Button DockPanel.Dock="Right" Click="OnSearchSubmitClick" ToolTip="Search">
-                                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE721;"/>
-                                </Button>
-                                <TextBox x:Name="SearchBox" KeyDown="SearchBox_KeyDown" VerticalAlignment="Center"
-                                         Margin="0,0,6,0"/>
-                            </DockPanel>
-                            <ListBox x:Name="SearchResults" SelectionChanged="SearchResults_SelectionChanged" Margin="0,8,0,0"/>
-                        </DockPanel>
-                    </TabItem>
-                </TabControl>
+                    </DockPanel>
+                </Grid>
             </Border>
 
-            <Grid Grid.Column="1" x:Name="HostGrid" Background="{StaticResource Brush.Viewport}">
-                <ContentControl x:Name="ViewerHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
-                <TextBlock x:Name="EmptyState" Text="Open a PDF to begin — drag one here or press Ctrl+O."
+            <!-- Main: page toolbar + viewer -->
+            <Grid Grid.Column="2" Background="{StaticResource Brush.Viewport}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Border Grid.Row="0" Background="{StaticResource Brush.Chrome}"
+                        BorderBrush="{StaticResource Brush.BorderSubtle}" BorderThickness="0,0,0,1" Padding="8,4">
+                    <DockPanel>
+                        <!-- Right utilities -->
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button Click="OnUndoClick" ToolTip="Undo (Ctrl+Z)" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE7A7;"/>
+                            </Button>
+                            <Button Click="OnRedoClick" ToolTip="Redo (Ctrl+Y)" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE7A6;"/>
+                            </Button>
+                        </StackPanel>
+                        <!-- Left: sidebar toggle, doc name, page pill, arrows -->
+                        <StackPanel Orientation="Horizontal">
+                            <Button Click="OnSidebarClick" ToolTip="Toggle sidebar" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE700;"/>
+                            </Button>
+                            <TextBlock x:Name="ToolbarDocName" Margin="6,0,10,0" VerticalAlignment="Center"
+                                       Foreground="{StaticResource Brush.TextSecondary}" FontSize="12"/>
+                            <Border Background="{StaticResource Brush.SurfaceRaised}" CornerRadius="5"
+                                    VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBox x:Name="PageBox" Width="36" TextAlignment="Center" KeyDown="PageBox_KeyDown"
+                                             Background="Transparent" BorderThickness="0" Margin="3,3"/>
+                                    <TextBlock Text="/" Foreground="{StaticResource Brush.TextMuted}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="PageCountText" Foreground="{StaticResource Brush.TextMuted}"
+                                               VerticalAlignment="Center" Margin="4,0,8,0" Text="–"/>
+                                </StackPanel>
+                            </Border>
+                            <Button Click="OnPrevPageClick" x:Name="PrevButton" ToolTip="Previous page (Page Up)" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE76B;"/>
+                            </Button>
+                            <Button Click="OnNextPageClick" x:Name="NextButton" ToolTip="Next page (Page Down)" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE76C;"/>
+                            </Button>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+                <!-- Second toolbar row: zoom + tools -->
+                <Border Grid.Row="1" Background="{StaticResource Brush.Chrome}" Padding="8,4"
+                        BorderBrush="{StaticResource Brush.BorderSubtle}" BorderThickness="0,0,0,1">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button Click="OnSaveClick" ToolTip="Download annotated copy" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE896;"/>
+                            </Button>
+                            <Button Click="OnPrintClick" ToolTip="Print (Ctrl+P)" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE749;"/>
+                            </Button>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Click="OnZoomOutClick" ToolTip="Zoom out (Ctrl+-)" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE738;"/>
+                            </Button>
+                            <TextBlock x:Name="ZoomText" VerticalAlignment="Center" MinWidth="42" TextAlignment="Center"
+                                       Foreground="{StaticResource Brush.TextSecondary}">100%</TextBlock>
+                            <Button Click="OnZoomInClick" ToolTip="Zoom in (Ctrl++)" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE8F4;"/>
+                            </Button>
+                            <Button Click="OnFitWidthClick" ToolTip="Fit width (Ctrl+1)" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE8A9;"/>
+                            </Button>
+                            <Button Click="OnFitPageClick" ToolTip="Fit page (Ctrl+2)" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE740;"/>
+                            </Button>
+                            <Button Click="OnRotateClick" ToolTip="Rotate 90° (Ctrl+R)" Width="28">
+                                <TextBlock Style="{StaticResource Glyph}" Text="&#xE7AD;"/>
+                            </Button>
+                            <Separator Style="{StaticResource ChromeSeparator}"/>
+                            <Button x:Name="ToolSelect" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Select"
+                                    ToolTip="Select" Width="30">
+                                <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE7B3;"/>
+                            </Button>
+                            <Button x:Name="ToolInk" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Ink"
+                                    ToolTip="Pen" Width="30">
+                                <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE70F;"/>
+                            </Button>
+                            <Button x:Name="ToolHighlighter" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Highlighter"
+                                    ToolTip="Highlighter" Width="30">
+                                <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE865;"/>
+                            </Button>
+                            <Button x:Name="ToolRectangle" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Rectangle"
+                                    ToolTip="Rectangle" Width="30">
+                                <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE371;"/>
+                            </Button>
+                            <Button x:Name="ToolEllipse" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Ellipse"
+                                    ToolTip="Ellipse" Width="30">
+                                <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE2E5;"/>
+                            </Button>
+                            <Button x:Name="ToolArrow" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Arrow"
+                                    ToolTip="Arrow" Width="30">
+                                <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE727;"/>
+                            </Button>
+                            <Button x:Name="ToolEraser" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Eraser"
+                                    ToolTip="Eraser" Width="30">
+                                <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE75C;"/>
+                            </Button>
+                            <Border Background="{StaticResource Brush.SurfaceRaised}" CornerRadius="5" Margin="6,0"
+                                    VerticalAlignment="Center" Padding="6,4">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="Swatch1" Click="OnSwatchClick" Tag="#F7768E" Width="18" Height="18"
+                                            Background="#F7768E" BorderBrush="#3A3E4B" BorderThickness="1"
+                                            Padding="0" MinHeight="0" MinWidth="0" ToolTip="Coral"/>
+                                    <Button x:Name="Swatch2" Click="OnSwatchClick" Tag="#FAB387" Width="18" Height="18" Margin="4,0,0,0"
+                                            Background="#FAB387" BorderBrush="#3A3E4B" BorderThickness="1"
+                                            Padding="0" MinHeight="0" MinWidth="0" ToolTip="Peach"/>
+                                    <Button x:Name="Swatch3" Click="OnSwatchClick" Tag="#A6E3A1" Width="18" Height="18" Margin="4,0,0,0"
+                                            Background="#A6E3A1" BorderBrush="#3A3E4B" BorderThickness="1"
+                                            Padding="0" MinHeight="0" MinWidth="0" ToolTip="Mint"/>
+                                    <Button x:Name="Swatch4" Click="OnSwatchClick" Tag="#89DCEB" Width="18" Height="18" Margin="4,0,0,0"
+                                            Background="#89DCEB" BorderBrush="#3A3E4B" BorderThickness="1"
+                                            Padding="0" MinHeight="0" MinWidth="0" ToolTip="Sky"/>
+                                    <Button x:Name="Swatch5" Click="OnSwatchClick" Tag="#89B4FA" Width="18" Height="18" Margin="4,0,0,0"
+                                            Background="#89B4FA" BorderBrush="#3A3E4B" BorderThickness="1"
+                                            Padding="0" MinHeight="0" MinWidth="0" ToolTip="Blue"/>
+                                    <Button x:Name="Swatch6" Click="OnSwatchClick" Tag="#111111" Width="18" Height="18" Margin="4,0,0,0"
+                                            Background="#111111" BorderBrush="#3A3E4B" BorderThickness="1"
+                                            Padding="0" MinHeight="0" MinWidth="0" ToolTip="Black"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+                <ContentControl Grid.Row="2" x:Name="ViewerHost"
+                                HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
+                <TextBlock Grid.Row="2" x:Name="EmptyState" Text="Open a PDF to begin — drag one here or press Ctrl+O."
                            HorizontalAlignment="Center" VerticalAlignment="Center"
                            Foreground="{StaticResource Brush.TextMuted}" FontSize="15"/>
             </Grid>
