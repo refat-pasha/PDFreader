@@ -15,3 +15,7 @@ release/
 [Bb]in/
 [Oo]bj/
 *.log
+
+# .NET publish + installer output
+dotnet/publish/
+dotnet/installer/

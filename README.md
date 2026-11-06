@@ -21,7 +21,18 @@ Text selection is a first-class reading action, and annotations are drawn on a t
 - **Recent files:** last ten documents, offered in File → Open Recent.
 - **Other exports:** current page → PNG, page text → TXT, notebook → DOCX (OpenXML).
 
-## Build
+## Install
+
+Grab the latest build from [GitHub Releases](https://github.com/refat-pasha/PDFreader/releases):
+
+- **`PDFreader_0.2.0_x64-setup.exe`** — per-user installer. No admin required; installs to `%LOCALAPPDATA%\Programs\PDFreader`, adds Start Menu shortcuts, and registers a `.pdf` viewer entry (Windows still asks you to confirm the default app in Settings → Default apps).
+- **`PDFreader-0.2.0-portable.zip`** — self-contained build; unzip anywhere and run `PDFreader.exe`. No .NET installation needed.
+
+> **Install tip:** save the installer somewhere outside a sandboxed or permission-restricted folder (your **Downloads** folder is ideal). Installers need to create temp files, and a folder with inherited restrictive ACLs can make setup fail with *"Error writing temporary file"* or *"unable to create the directory … Error 5: Access is denied."*
+
+The build is unsigned, so Windows SmartScreen may show a warning — choose **More info → Run anyway** if you trust it. SHA-256 checksums are attached to each release.
+
+## Build from source
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download) with the Windows Desktop runtime (any Windows 10/11 x64 machine).
 
@@ -65,8 +76,23 @@ The original Tauri source is still in this repository under `src/` and `src-taur
 
 - Thumbnails render lazily and are capped at 200 pages in the sidebar (huge documents stay responsive; the main viewer handles any page count).
 - Annotation marks are flattened into exported PDFs; editing the original file's text is not supported.
-- The Windows installer (with `.pdf` file association) is planned; for now run the exe directly or associate it manually via Settings → Default apps.
 - OCR for scanned pages is not yet wired into the .NET version (the Tauri version had Windows OCR integration).
+- The build is unsigned; there is no code-signing certificate yet.
+
+## Making a release
+
+```powershell
+# 1. Publish the self-contained build (run this OUTSIDE any sandboxed workspace)
+dotnet publish dotnet/PDFreader.App -c Release -r win-x64 --self-contained true -o dotnet/publish
+
+# 2. Compile the installer (Inno Setup 6)
+"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" dotnet/setup.iss
+
+# 3. Package the portable build and publish the release
+Compress-Archive -Path dotnet/publish/* -DestinationPath PDFreader-0.2.0-portable.zip
+```
+
+The `setup.iss` script installs per-user (`PrivilegesRequired=lowest`), creates Start Menu/desktop shortcuts, writes the `PDFreader.pdf` ProgID with an `OpenWithProgids` entry under HKCU, and never touches `UserChoice`.
 
 ## History
 
