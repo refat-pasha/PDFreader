@@ -101,6 +101,8 @@ public sealed class PageViewer : Border
         _overlay.MouseDown += OnOverlayDown;
         _overlay.MouseMove += OnOverlayMove;
         _overlay.MouseUp += OnOverlayUp;
+        _overlay.MouseWheel += OnOverlayWheel;
+        _scroll.PreviewMouseWheel += OnScrollWheel;
 
         _workspace.StateChanged += () => Dispatcher.BeginInvoke(RedrawAnnotations);
         // Fit modes need the real viewport; re-render when the layout settles.
@@ -180,6 +182,57 @@ public sealed class PageViewer : Border
 
     public event Action<int>? PageChanged;
     public event Action<int>? Rendered;
+    /// <summary>Raised for Ctrl+wheel zoom; the window applies it so toolbar/percent stay in sync.</summary>
+    public event Action<bool>? ZoomRequested;
+
+    // ------------------------------------------------------------- wheel input
+
+    /// <summary>
+    /// Plain wheel: turn pages. The wheel scrolls the viewport when the page
+    /// overflows it and flips to the next/previous page at the edges.
+    /// Ctrl+wheel: zoom (delegated to the window).
+    /// </summary>
+    private void OnScrollWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            e.Handled = true;
+            ZoomRequested?.Invoke(e.Delta > 0);
+            return;
+        }
+
+        // Page fully visible (fit modes): wheel = page turn.
+        if (_scroll.ScrollableHeight <= 0 && _scroll.ScrollableWidth <= 0)
+        {
+            e.Handled = true;
+            TurnPage(e.Delta > 0 ? -1 : 1);
+            return;
+        }
+
+        // Zoomed in: scroll the viewport; flip page only when already at the edge.
+        bool atBottom = _scroll.VerticalOffset >= _scroll.ScrollableHeight - 1;
+        bool atTop = _scroll.VerticalOffset <= 1;
+        if (e.Delta < 0 && atBottom && !atTop)
+        {
+            e.Handled = true;
+            TurnPage(1);
+        }
+        else if (e.Delta > 0 && atTop && !atBottom)
+        {
+            e.Handled = true;
+            TurnPage(-1);
+        }
+        // Otherwise let the ScrollViewer scroll naturally.
+    }
+
+    private void TurnPage(int direction)
+    {
+        var target = Page + direction;
+        if (target < 1 || target > _doc.PageCount) return;
+        GoToPage(target);
+    }
+
+    private void OnOverlayWheel(object sender, MouseWheelEventArgs e) => OnScrollWheel(sender, e);
 
     public void ApplyZoomMode(ZoomMode mode, double customZoom, double viewportWidth, double viewportHeight = 0)
     {

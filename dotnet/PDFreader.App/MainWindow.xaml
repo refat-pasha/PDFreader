@@ -191,7 +191,7 @@
                     <DockPanel x:Name="PanelSearch" Visibility="Collapsed" Margin="10,10">
                         <DockPanel DockPanel.Dock="Top">
                             <TextBox x:Name="SearchBox" KeyDown="SearchBox_KeyDown" VerticalAlignment="Center"/>
-                            <Button DockPanel.Dock="Right" Click="OnSearchSubmitClick" ToolTip="Search" Margin="6,0,0,0">
+                            <Button DockPanel.Dock="Right" Click="OnSearchSubmitClick" ToolTip="Search" Margin="6,0,0,0" AutomationProperties.Name="Run search">
                                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE721;"/>
                             </Button>
                         </DockPanel>
@@ -258,16 +258,19 @@
                                     VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBox x:Name="PageBox" Width="36" TextAlignment="Center" KeyDown="PageBox_KeyDown"
-                                             Background="Transparent" BorderThickness="0" Margin="3,3"/>
+                                             Background="Transparent" BorderThickness="0" Margin="3,3"
+                                             AutomationProperties.Name="Current page"/>
                                     <TextBlock Text="/" Foreground="{StaticResource Brush.TextMuted}" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="PageCountText" Foreground="{StaticResource Brush.TextMuted}"
                                                VerticalAlignment="Center" Margin="4,0,8,0" Text="–"/>
                                 </StackPanel>
                             </Border>
-                            <Button Click="OnPrevPageClick" x:Name="PrevButton" ToolTip="Previous page (Page Up)" Width="28">
+                            <Button Click="OnPrevPageClick" x:Name="PrevButton" ToolTip="Previous page (Page Up)" Width="28"
+                                    AutomationProperties.Name="Previous page">
                                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE76B;"/>
                             </Button>
-                            <Button Click="OnNextPageClick" x:Name="NextButton" ToolTip="Next page (Page Down)" Width="28">
+                            <Button Click="OnNextPageClick" x:Name="NextButton" ToolTip="Next page (Page Down)" Width="28"
+                                    AutomationProperties.Name="Next page">
                                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE76C;"/>
                             </Button>
                         </StackPanel>
@@ -278,7 +281,7 @@
                         BorderBrush="{StaticResource Brush.BorderSubtle}" BorderThickness="0,0,0,1">
                     <DockPanel>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                            <Button Click="OnSaveClick" ToolTip="Download annotated copy" Width="28">
+                            <Button Click="OnSaveClick" ToolTip="Download annotated copy" Width="28" AutomationProperties.Name="Save annotated copy">
                                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE896;"/>
                             </Button>
                             <Button Click="OnPrintClick" ToolTip="Print (Ctrl+P)" Width="28">
@@ -286,50 +289,50 @@
                             </Button>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal">
-                            <Button Click="OnZoomOutClick" ToolTip="Zoom out (Ctrl+-)" Width="28">
+                            <Button Click="OnZoomOutClick" ToolTip="Zoom out (Ctrl+-)" Width="28" AutomationProperties.Name="Zoom out">
                                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE738;"/>
                             </Button>
                             <TextBlock x:Name="ZoomText" VerticalAlignment="Center" MinWidth="42" TextAlignment="Center"
                                        Foreground="{StaticResource Brush.TextSecondary}">100%</TextBlock>
-                            <Button Click="OnZoomInClick" ToolTip="Zoom in (Ctrl++)" Width="28">
+                            <Button Click="OnZoomInClick" ToolTip="Zoom in (Ctrl++)" Width="28" AutomationProperties.Name="Zoom in">
                                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE8F4;"/>
                             </Button>
-                            <Button Click="OnFitWidthClick" ToolTip="Fit width (Ctrl+1)" Width="28">
+                            <Button Click="OnFitWidthClick" ToolTip="Fit width (Ctrl+1)" Width="28" AutomationProperties.Name="Fit width">
                                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE8A9;"/>
                             </Button>
-                            <Button Click="OnFitPageClick" ToolTip="Fit page (Ctrl+2)" Width="28">
+                            <Button Click="OnFitPageClick" ToolTip="Fit page (Ctrl+2)" Width="28" AutomationProperties.Name="Fit page">
                                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE740;"/>
                             </Button>
-                            <Button Click="OnRotateClick" ToolTip="Rotate 90° (Ctrl+R)" Width="28">
+                            <Button Click="OnRotateClick" ToolTip="Rotate 90° (Ctrl+R)" Width="28" AutomationProperties.Name="Rotate">
                                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE7AD;"/>
                             </Button>
                             <Separator Style="{StaticResource ChromeSeparator}"/>
                             <Button x:Name="ToolSelect" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Select"
-                                    ToolTip="Select" Width="30">
+                                    ToolTip="Select" Width="30" AutomationProperties.Name="Select tool">
                                 <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE7B3;"/>
                             </Button>
                             <Button x:Name="ToolInk" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Ink"
-                                    ToolTip="Pen" Width="30">
+                                    ToolTip="Pen" Width="30" AutomationProperties.Name="Pen tool">
                                 <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE70F;"/>
                             </Button>
                             <Button x:Name="ToolHighlighter" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Highlighter"
-                                    ToolTip="Highlighter" Width="30">
+                                    ToolTip="Highlighter" Width="30" AutomationProperties.Name="Highlighter tool">
                                 <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE865;"/>
                             </Button>
                             <Button x:Name="ToolRectangle" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Rectangle"
-                                    ToolTip="Rectangle" Width="30">
+                                    ToolTip="Rectangle" Width="30" AutomationProperties.Name="Rectangle tool">
                                 <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE371;"/>
                             </Button>
                             <Button x:Name="ToolEllipse" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Ellipse"
-                                    ToolTip="Ellipse" Width="30">
+                                    ToolTip="Ellipse" Width="30" AutomationProperties.Name="Ellipse tool">
                                 <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE2E5;"/>
                             </Button>
                             <Button x:Name="ToolArrow" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Arrow"
-                                    ToolTip="Arrow" Width="30">
+                                    ToolTip="Arrow" Width="30" AutomationProperties.Name="Arrow tool">
                                 <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE727;"/>
                             </Button>
                             <Button x:Name="ToolEraser" Style="{StaticResource ToggleButtonStyle}" Click="OnToolClick" Tag="Eraser"
-                                    ToolTip="Eraser" Width="30">
+                                    ToolTip="Eraser" Width="30" AutomationProperties.Name="Eraser tool">
                                 <TextBlock Style="{StaticResource ToolGlyph}" Text="&#xE75C;"/>
                             </Button>
                             <Border Background="{StaticResource Brush.SurfaceRaised}" CornerRadius="5" Margin="6,0"

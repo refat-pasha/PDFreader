@@ -98,6 +98,8 @@ public sealed class SearchResult
     public required string DocName { get; init; }
     public required int PageIndex { get; init; }
     public required string Snippet { get; init; }
+
+    public override string ToString() => $"Page {PageIndex + 1} — {Snippet}";
 }
 
 public sealed class RecentFile

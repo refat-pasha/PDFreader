@@ -123,6 +123,11 @@ public partial class MainWindow : Window
 
         var viewer = new PageViewer(doc, _renderer, _pdf, _passwords, _workspace);
         _viewersByDocId[doc.Id] = viewer;
+        viewer.ZoomRequested += zoomIn =>
+        {
+            if (_workspace.ActiveDocument?.Id == doc.Id)
+                SetZoom(zoomIn ? _zoom * 1.15 : _zoom / 1.15);
+        };
 
         var tab = new Border
         {
