@@ -553,6 +553,11 @@ public partial class MainWindow : Window
             .ToList();
         entries.Insert(0, new RecentFile { Path = path, Name = Path.GetFileName(path) });
         _persistence.SaveRecent(entries);
+        if (_persistence.StorageDegraded)
+        {
+            // One clear warning instead of a crash per write.
+            SetStatus("Settings storage is unavailable — recent files and session will not be saved.");
+        }
         UpdateRecentMenu();
     }
 

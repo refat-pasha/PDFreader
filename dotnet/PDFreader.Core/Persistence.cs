@@ -17,6 +17,43 @@ public sealed class Persistence
     private static string Root =>
         RootOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PDFreader");
 
+    /// <summary>True once a write has failed; further writes are skipped so a
+    /// locked-down data directory never spams the user with error dialogs.</summary>
+    public bool StorageDegraded { get; private set; }
+
+    private bool WriteGuarded(Action write)
+    {
+        if (StorageDegraded) return false;
+        try
+        {
+            Directory.CreateDirectory(Root);
+            write();
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            StorageDegraded = true;
+            return false;
+        }
+        catch (IOException)
+        {
+            StorageDegraded = true;
+            return false;
+        }
+    }
+
+    private T? ReadGuarded<T>(Func<T?> read) where T : class
+    {
+        try
+        {
+            return read();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
@@ -29,11 +66,8 @@ public sealed class Persistence
 
     private string RecentPath => Path.Combine(Root, "recent.json");
 
-    public void SaveRecent(IReadOnlyList<RecentFile> entries)
-    {
-        Directory.CreateDirectory(Root);
-        File.WriteAllText(RecentPath, JsonSerializer.Serialize(entries.Take(10), Json));
-    }
+    public void SaveRecent(IReadOnlyList<RecentFile> entries) =>
+        WriteGuarded(() => File.WriteAllText(RecentPath, JsonSerializer.Serialize(entries.Take(10), Json)));
 
     public List<RecentFile> LoadRecent()
     {
@@ -52,11 +86,8 @@ public sealed class Persistence
 
     private string AnnotationsPath => Path.Combine(Root, "annotations.json");
 
-    public void SaveAnnotations(IReadOnlyList<Annotation> annotations)
-    {
-        Directory.CreateDirectory(Root);
-        File.WriteAllText(AnnotationsPath, JsonSerializer.Serialize(annotations, Json));
-    }
+    public void SaveAnnotations(IReadOnlyList<Annotation> annotations) =>
+        WriteGuarded(() => File.WriteAllText(AnnotationsPath, JsonSerializer.Serialize(annotations, Json)));
 
     public List<Annotation> LoadAnnotations()
     {
@@ -75,11 +106,8 @@ public sealed class Persistence
 
     private string NotesPath => Path.Combine(Root, "notes.json");
 
-    public void SaveNotes(IReadOnlyList<Note> notes)
-    {
-        Directory.CreateDirectory(Root);
-        File.WriteAllText(NotesPath, JsonSerializer.Serialize(notes, Json));
-    }
+    public void SaveNotes(IReadOnlyList<Note> notes) =>
+        WriteGuarded(() => File.WriteAllText(NotesPath, JsonSerializer.Serialize(notes, Json)));
 
     public List<Note> LoadNotes()
     {
@@ -98,11 +126,8 @@ public sealed class Persistence
 
     private string BookmarksPath => Path.Combine(Root, "bookmarks.json");
 
-    public void SaveBookmarks(IReadOnlyList<Bookmark> bookmarks)
-    {
-        Directory.CreateDirectory(Root);
-        File.WriteAllText(BookmarksPath, JsonSerializer.Serialize(bookmarks, Json));
-    }
+    public void SaveBookmarks(IReadOnlyList<Bookmark> bookmarks) =>
+        WriteGuarded(() => File.WriteAllText(BookmarksPath, JsonSerializer.Serialize(bookmarks, Json)));
 
     public List<Bookmark> LoadBookmarks()
     {
@@ -135,11 +160,8 @@ public sealed class Persistence
         public int Rotation { get; set; }
     }
 
-    public void SaveSession(SessionFile session)
-    {
-        Directory.CreateDirectory(Root);
-        File.WriteAllText(SessionPath, JsonSerializer.Serialize(session, Json));
-    }
+    public void SaveSession(SessionFile session) =>
+        WriteGuarded(() => File.WriteAllText(SessionPath, JsonSerializer.Serialize(session, Json)));
 
     public SessionFile? LoadSession()
     {
