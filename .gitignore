@@ -1,21 +1,14 @@
-node_modules/
-dist/
-target/
-.vite/
-coverage/
-*.local
-.DS_Store
-Thumbs.db
-src-tauri/target/
-tests/.artifacts/
-
-release/
-
 # .NET build outputs
 [Bb]in/
 [Oo]bj/
 *.log
-
-# .NET publish + installer output
+*.user
 dotnet/publish/
 dotnet/installer/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Local-only files
+*.local

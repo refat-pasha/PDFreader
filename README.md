@@ -10,7 +10,7 @@ Text selection is a first-class reading action, and annotations are drawn on a t
 
 ## What works today
 
-- **Reading:** tabs, fit-page/fit-width/custom zoom, rotation, page input, prev/next, Page Up/Page Down/Home/End keys, drag-and-drop, and command-line/file-association opening.
+- **Reading:** tabs, fit-page/fit-width/custom zoom, rotation, page input, prev/next, Page Up/Page Down/Home/End keys, **mouse-wheel page turns**, **Ctrl+wheel zoom**, drag-and-drop, and command-line/file-association opening.
 - **Annotations:** pen, highlighter, rectangle, ellipse, arrow, and an eraser that deletes the mark under the cursor. Six colors, undo/redo. Marks are stored in PDF page-point coordinates so they follow the page across zoom and rotation.
 - **Annotated PDF export:** every page is re-rendered through PDFium and the marks are burned into the raster — the exported file looks exactly like the on-screen view.
 - **Search:** full-text search across all open documents with page jumps.
@@ -62,15 +62,13 @@ dotnet/
 └─ PDFreader.Tests/   xUnit tests with an in-process runner (dotnet exec)
 ```
 
-CI (`.github/workflows/ci.yml`) builds and tests all three components on every push.
+CI (`.github/workflows/ci.yml`) builds the solution and runs the full test suite on every push.
 
 ## Why a .NET rewrite?
 
 The first version of PDFreader was a Tauri 2 app. Tauri renders its UI through the WebView2 runtime, and on some Windows 11 hosts (notably Insider build 26200) WebView2's Chromium processes abort at startup — the window opens and immediately dies. That failure mode is documented in `docs/webview2-compat.md`; it reproduces with the stable runtime, the fixed-version runtime, and the newest preview runtimes, and is unrelated to the app itself.
 
-The .NET rewrite removes that dependency class entirely: WPF draws with DirectX through Microsoft's own stack, PDFium is the only third-party native component, and the app now runs on the same machine where the WebView2 build could not start.
-
-The original Tauri source is still in this repository under `src/` and `src-tauri/` for reference; the WPF app in `dotnet/` is the active codebase.
+The .NET rewrite removes that dependency class entirely: WPF draws with DirectX through Microsoft's own stack, PDFium is the only third-party native component, and the app now runs on the same machine where the WebView2 build could not start. The Tauri-era source (React/TypeScript frontend, Rust backend) has been removed from the repository; it lives in the git history and its binaries are archived on the releases page.
 
 ## Notes and limitations
 
