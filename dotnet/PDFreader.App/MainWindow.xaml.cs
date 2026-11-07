@@ -773,7 +773,10 @@ public partial class MainWindow : Window
                 if (session.Views.TryGetValue(path, out var view))
                 {
                     _zoom = Math.Clamp(view.Zoom <= 0 ? 1.0 : view.Zoom, 0.25, 4.0);
-                    _rotation = view.Rotation;
+                    // Rotation is a per-session viewing aid, not document state:
+                    // always reopen at 0 so a document never appears sideways
+                    // because of a previous session's experiment.
+                    _rotation = 0;
                     if (_viewersByDocId.TryGetValue(doc.Id, out var v))
                         v.RestoreState(view.Page, _zoom, _rotation, _zoomMode);
                 }
