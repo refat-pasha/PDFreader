@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private double _zoom = 1.0;
     private ZoomMode _zoomMode = ZoomMode.FitPage;
     private int _rotation;
+    private DateTime _lastZoomTime; // UTC timestamp of last applied Ctrl+wheel zoom (touchpad throttle)
     private readonly Dictionary<string, PageViewer> _viewersByDocId = new();
     private readonly Dictionary<string, Border> _tabsByDocId = new();
     private Note? _activeNote;
@@ -125,8 +126,11 @@ public partial class MainWindow : Window
         _viewersByDocId[doc.Id] = viewer;
         viewer.ZoomRequested += zoomIn =>
         {
-            if (_workspace.ActiveDocument?.Id == doc.Id)
-                SetZoom(zoomIn ? _zoom * 1.15 : _zoom / 1.15);
+            if (_workspace.ActiveDocument?.Id != doc.Id) return;
+            var now = DateTime.UtcNow;
+            if ((now - _lastZoomTime).TotalMilliseconds < 60) return; // touchpad gestures fire many wheel events
+            _lastZoomTime = now;
+            SetZoom(zoomIn ? _zoom * 1.15 : _zoom / 1.15);
         };
 
         var tab = new Border
@@ -147,6 +151,7 @@ public partial class MainWindow : Window
         viewer.Rendered += page =>
         {
             SetStatus($"{doc.Name} — page {page} rendered");
+            UpdateReadingBadge();
             UpdatePageChrome();
         };
     }
@@ -267,7 +272,14 @@ public partial class MainWindow : Window
     {
         var viewer = ActiveViewer;
         if (viewer is null) return;
-        viewer.ApplyZoomMode(_zoomMode, _zoom, ActualWidth, ActualHeight);
+        // Give the viewer the real space it occupies: window minus the icon
+        // rail (48) and the side panel (260 when open), and minus the two
+        // toolbar rows + status bar (~130) vertically.
+        double panelWidth = SidePanel.Visibility == Visibility.Visible ? SidePanel.ActualWidth + Rail.ActualWidth : Rail.ActualWidth;
+        viewer.ExternalViewport = new Size(
+            Math.Max(200, ActualWidth - panelWidth - 20),
+            Math.Max(200, ActualHeight - 138));
+        viewer.ApplyZoomMode(_zoomMode, _zoom, viewer.ExternalViewport.Width, viewer.ExternalViewport.Height);
         UpdatePageChrome();
     }
 
@@ -277,6 +289,9 @@ public partial class MainWindow : Window
         if (doc is null) return;
         PageBox.Text = (ActiveViewer?.Page ?? 1).ToString();
         PageCountText.Text = doc.PageCount.ToString();
+        // Fit modes recompute the scale inside the viewer; read back the
+        // effective zoom so the label never shows a stale custom value.
+        _zoom = ActiveViewer?.EffectiveZoom ?? _zoom;
         ZoomText.Text = $"{Math.Round(_zoom * 100)}%";
         var marks = _workspace.AnnotationCount(doc.Id);
         MarkupText.Text = marks == 0 ? "" : $"{marks} markup {(marks == 1 ? "item" : "items")}";
@@ -723,6 +738,10 @@ public partial class MainWindow : Window
         {
             var session = _persistence.LoadSession();
             if (session is null) return;
+
+            // Never restore a custom zoom: a document must always open fitted to the window.
+            _zoomMode = ZoomMode.FitPage;
+
             foreach (var path in session.Paths.Take(8))
             {
                 if (!File.Exists(path)) continue;
@@ -732,7 +751,7 @@ public partial class MainWindow : Window
                 EnsureTab(doc);
                 if (session.Views.TryGetValue(path, out var view))
                 {
-                    _zoom = view.Zoom <= 0 ? 1.0 : view.Zoom;
+                    _zoom = Math.Clamp(view.Zoom <= 0 ? 1.0 : view.Zoom, 0.25, 4.0);
                     _rotation = view.Rotation;
                     if (_viewersByDocId.TryGetValue(doc.Id, out var v))
                         v.RestoreState(view.Page, _zoom, _rotation, _zoomMode);

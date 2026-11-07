@@ -108,8 +108,11 @@ public sealed class PageViewer : Border
         // Fit modes need the real viewport; re-render when the layout settles.
         _scroll.SizeChanged += (_, args) =>
         {
+            // Debounce: skip re-renders during drag-resize; only react when
+            // the width moved by more than 60px (or 8% on narrow viewports).
+            var delta = Math.Abs(args.NewSize.Width - _lastViewportWidth);
             if (args.NewSize.Width > 40 && _mode != ZoomMode.Custom &&
-                Math.Abs(args.NewSize.Width - _lastViewportWidth) > 1)
+                (delta > 60 || delta > args.NewSize.Width * 0.08))
             {
                 _lastViewportWidth = args.NewSize.Width;
                 Diagnostics.Trace($"ScrollViewer SizeChanged -> re-render ({args.NewSize.Width:0}x{args.NewSize.Height:0})");
@@ -157,6 +160,10 @@ public sealed class PageViewer : Border
         if (page == Page) return;
         Page = page;
         RenderPage();
+        // A new page always starts at its top-left; never inherit the
+        // previous page's scroll offset (buttons, wheel, thumbnails, etc.).
+        _scroll.ScrollToTop();
+        _scroll.ScrollToHorizontalOffset(0);
         PageChanged?.Invoke(Page);
     }
 
@@ -184,6 +191,16 @@ public sealed class PageViewer : Border
     public event Action<int>? Rendered;
     /// <summary>Raised for Ctrl+wheel zoom; the window applies it so toolbar/percent stay in sync.</summary>
     public event Action<bool>? ZoomRequested;
+
+    /// <summary>
+    /// Viewport size the last render was computed against. MainWindow sets this
+    /// before calling ApplyZoomMode so fit modes use the real space available
+    /// to the viewer (rail + side panel already excluded).
+    /// </summary>
+    public Size ExternalViewport { get; set; }
+
+    /// <summary>The zoom actually applied by the last render (fit modes recompute it).</summary>
+    public double EffectiveZoom => _zoom;
 
     // ------------------------------------------------------------- wheel input
 
@@ -251,9 +268,12 @@ public sealed class PageViewer : Border
     public void RestoreState(int page, double zoom, int rotation, ZoomMode mode)
     {
         Page = Math.Clamp(page, 1, _doc.PageCount);
+        // A stale/invalid restored zoom must not blow the page up on open:
+        // clamp it, and never restore Custom (fall back to FitPage).
+        zoom = Math.Clamp(zoom, 0.25, 4.0);
         _zoom = zoom;
         _rotation = rotation;
-        _mode = mode;
+        _mode = mode == ZoomMode.Custom ? ZoomMode.FitPage : mode;
         RenderPage(force: true);
     }
 
@@ -265,12 +285,18 @@ public sealed class PageViewer : Border
         if (_rotation is 90 or 270) (w, h) = (h, w);
         // The viewer may not be measured yet (first render) — fall back to the
         // host window's client size so fit modes still produce a usable scale.
-        double availW = ActualWidth > 40 ? ActualWidth - 60 : 0;
-        double availH = ActualHeight > 40 ? ActualHeight - 60 : 0;
-        if (availW <= 0 && Window.GetWindow(this) is { } host)
+        double availW = ActualWidth > 40 ? ActualWidth - 40 : 0;
+        double availH = ActualHeight > 40 ? ActualHeight - 30 : 0;
+        if (ExternalViewport.Width > 40)
         {
-            availW = host.ActualWidth - 80;
-            availH = host.ActualHeight - 160;
+            // Trust the window-supplied viewport (rail/panel already excluded).
+            availW = ExternalViewport.Width - 40;
+            availH = ExternalViewport.Height - 30;
+        }
+        else if (availW <= 0 && Window.GetWindow(this) is { } host)
+        {
+            availW = host.ActualWidth - 320;
+            availH = host.ActualHeight - 150;
         }
         double scale;
         if (_mode == ZoomMode.FitWidth && availW > 40)
@@ -330,14 +356,16 @@ public sealed class PageViewer : Border
                     image.BeginInit();
                     image.CacheOption = BitmapCacheOption.OnLoad;
                     image.StreamSource = stream;
-                    image.DecodePixelWidth = widthPx; // hint: decode at native size
                     image.EndInit();
                     image.Freeze();
                     _pageImage.Source = image;
                     // Bitmap is 2× the logical size (supersampled). Explicit
                     // logical dimensions give an exact 2:1 downscale.
-                    var logicalW = widthPx / 2.0;
-                    var logicalH = Math.Round(logicalW * image.PixelHeight / (double)image.PixelWidth, 0);
+                    // Logical size comes from the ACTUAL decoded bitmap (2:1
+                    // supersample downscale), so the true aspect ratio holds
+                    // even after rotation or slight width rounding.
+                    var logicalW = image.PixelWidth / 2.0;
+                    var logicalH = image.PixelHeight / 2.0;
                     _pageImage.Width = logicalW;
                     _pageImage.Height = logicalH;
                     _pageHost.Width = logicalW;
