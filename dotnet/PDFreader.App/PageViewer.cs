@@ -337,6 +337,18 @@ public sealed class PageViewer : Border
         var token = generation.Token;
         var page = Page;
         var rotation = _rotation;
+
+        // Instant flip: reuse the decoded bitmap from a previous identical
+        // render (e.g. flipping back a page, or returning to this zoom).
+        var cacheKey = (page, widthPx, rotation);
+        if (_bitmapCache.TryGetValue(cacheKey, out var cachedImage))
+        {
+            ApplyBitmap(cachedImage, page, widthPx, rotation);
+            Diagnostics.Trace($"render CACHED page={page} (instant flip)");
+            // Refresh in the background so annotations drawn on the PDF itself
+            // stay current; the cached frame keeps the UI responsive meanwhile.
+        }
+
         _pageHost.Children.Remove(_busy);
         _pageHost.Children.Add(_busy);
 
@@ -352,9 +364,8 @@ public sealed class PageViewer : Border
                 Dispatcher.BeginInvoke(() =>
                 {
                     if (token.IsCancellationRequested) return;
-                    // Decode at 96dpi so the WPF "natural size" equals the pixel
-                    // count — then our explicit Width/Height is a pure 2:1
-                    // downscale from the supersampled render. No DPI math.
+                    // Decode at native pixel size (no DPI rescale). Explicit
+                    // Width/Height gives the exact 2:1 supersample downscale.
                     var image = new BitmapImage();
                     using var stream = new MemoryStream(png);
                     image.BeginInit();
@@ -362,33 +373,16 @@ public sealed class PageViewer : Border
                     image.StreamSource = stream;
                     image.EndInit();
                     image.Freeze();
-                    _pageImage.Source = image;
-                    // Bitmap is 2× the logical size (supersampled). Explicit
-                    // logical dimensions give an exact 2:1 downscale.
-                    // Logical size comes from the ACTUAL decoded bitmap (2:1
-                    // supersample downscale), so the true aspect ratio holds
-                    // even after rotation or slight width rounding.
-                    var logicalW = image.PixelWidth / 2.0;
-                    var logicalH = image.PixelHeight / 2.0;
-                    _pageImage.Width = logicalW;
-                    _pageImage.Height = logicalH;
-                    _pageHost.Width = logicalW;
-                    _pageHost.Height = logicalH;
-                    _overlay.Width = logicalW;
-                    _overlay.Height = logicalH;
-                    // Keep page point size in sync for annotation coordinate mapping.
-                    try
-                    {
-                        var (pw, ph) = _renderer.GetPageSize(_doc.Path, _passwords.TryGetValue(_doc.Path, out var pw2) ? pw2 : null, page);
-                        _pagePointSize = (pw, ph);
-                    }
-                    catch { }
+                    CacheBitmap(cacheKey, image);
+                    ApplyBitmap(image, page, widthPx, rotation);
                     _renderedPage = page;
                     _renderedZoom = _zoom;
                     _renderedRotation = rotation;
                     _pageHost.Children.Remove(_busy);
                     RedrawAnnotations();
                     Rendered?.Invoke(page);
+                    // Prefetch neighbours so the next page turn is instant.
+                    PrefetchNeighbours(page, widthPx, rotation, token);
                 });
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -401,6 +395,81 @@ public sealed class PageViewer : Border
                 });
             }
         }, token);
+    }
+
+    /// <summary>Applies a decoded page bitmap to the UI and syncs layout + page points.</summary>
+    private void ApplyBitmap(BitmapImage image, int page, int widthPx, int rotation)
+    {
+        _pageImage.Source = image;
+        // Bitmap is 2× the logical size (supersampled): explicit logical
+        // dimensions give the exact 2:1 downscale. Rotation already applied
+        // by PDFium, so the bitmap IS the final orientation.
+        var logicalW = image.PixelWidth / 2.0;
+        var logicalH = image.PixelHeight / 2.0;
+        _pageImage.Width = logicalW;
+        _pageImage.Height = logicalH;
+        _pageHost.Width = logicalW;
+        _pageHost.Height = logicalH;
+        _overlay.Width = logicalW;
+        _overlay.Height = logicalH;
+        // Keep page point size in sync for annotation coordinate mapping.
+        try
+        {
+            _passwords.TryGetValue(_doc.Path, out var pw2);
+            var (pw, ph) = _renderer.GetPageSize(_doc.Path, pw2, page);
+            _pagePointSize = (pw, ph);
+        }
+        catch { }
+        RedrawAnnotations();
+    }
+
+    private readonly Dictionary<(int Page, int Width, int Rotation), BitmapImage> _bitmapCache = new();
+    private const int MaxCachedBitmaps = 6;
+
+    /// <summary>Renders page±1 in the background so the next page turn is instant.</summary>
+    private void PrefetchNeighbours(int page, int widthPx, int rotation, CancellationToken token)
+    {
+        foreach (var neighbour in new[] { page - 1, page + 1 })
+        {
+            if (neighbour < 1 || neighbour > _doc.PageCount) continue;
+            var key = (neighbour, widthPx, rotation);
+            if (_bitmapCache.ContainsKey(key)) continue;
+            var localPage = neighbour;
+            Task.Run(async () =>
+            {
+                try
+                {
+                    _passwords.TryGetValue(_doc.Path, out var password);
+                    var png = _renderer.RenderPage(_doc.Path, password, localPage, widthPx, rotation);
+                    if (token.IsCancellationRequested) return;
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        var image = new BitmapImage();
+                        using var stream = new MemoryStream(png);
+                        image.BeginInit();
+                        image.CacheOption = BitmapCacheOption.OnLoad;
+                        image.StreamSource = stream;
+                        image.EndInit();
+                        image.Freeze();
+                        CacheBitmap(key, image);
+                        Diagnostics.Trace($"prefetched page={localPage}");
+                    });
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) { Diagnostics.Trace($"prefetch ERROR page={localPage}: {ex.Message}"); }
+            }, token);
+        }
+    }
+
+    private void CacheBitmap((int Page, int Width, int Rotation) key, BitmapImage image)
+    {
+        _bitmapCache[key] = image;
+        while (_bitmapCache.Count > MaxCachedBitmaps)
+        {
+            var oldest = _bitmapCache.Keys.First();
+            _bitmapCache.Remove(oldest);
+        }
     }
 
     private void SetError(string message)
