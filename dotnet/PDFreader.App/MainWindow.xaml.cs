@@ -393,14 +393,25 @@ public partial class MainWindow : Window
 
     private void SetTool(string tool)
     {
+        // Defensive: never let a stale/malformed tag reach Enum.Parse as a
+        // crash (the old "Requested value 'active' was not found" dialog).
+        if (!Enum.TryParse<PageViewer.ToolMode>(tool, ignoreCase: true, out var mode))
+        {
+            Diagnostics.Trace($"SetTool ignored invalid tool name '{tool}'");
+            return;
+        }
+        // Clicking the active tool deactivates it (back to Select).
+        if (_activeTool == tool) tool = "Select";
         _activeTool = tool;
-        ActiveViewer?.SetTool(Enum.Parse<PageViewer.ToolMode>(tool, ignoreCase: true));
+        ActiveViewer?.SetTool(mode == PageViewer.ToolMode.Select || tool == "Select"
+            ? PageViewer.ToolMode.Select
+            : Enum.Parse<PageViewer.ToolMode>(tool, ignoreCase: true));
         foreach (var button in new[] { ToolSelect, ToolInk, ToolHighlighter, ToolRectangle, ToolEllipse, ToolArrow, ToolEraser })
         {
-            // Keep the tool name in Tag (other code reads it) and drive the
-            // visual active state directly — the style's Tag trigger expects
-            // the exact value "active", which would clobber the tool name.
-            var isThisTool = string.Equals((string?)button.Tag, tool, StringComparison.OrdinalIgnoreCase);
+            // Tag keeps the tool name (never "active" — that value crashed
+            // Enum.Parse); the visual state applies directly via brushes.
+            var isThisTool = string.Equals((string?)button.Tag, tool, StringComparison.OrdinalIgnoreCase)
+                && tool != "Select";
             button.Background = isThisTool
                 ? (Brush)FindResource("Brush.AccentSoft")
                 : Brushes.Transparent;
