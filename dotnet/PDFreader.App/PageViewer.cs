@@ -75,9 +75,13 @@ public sealed class PageViewer : Border
             VerticalAlignment = VerticalAlignment.Center,
         };
         // Center via container alignment; explicit Width/Height set after render.
+        // Stretch=Uniform: the supersampled bitmap scales INTO the explicit
+        // Width/Height box (2:1 downscale). Stretch=None would draw the bitmap
+        // at its metadata-derived natural size and CLIP it to the box — the
+        // cause of the "page cut off at the right edge" bug.
         _pageImage = new Image
         {
-            Stretch = Stretch.None,
+            Stretch = Stretch.Uniform,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
