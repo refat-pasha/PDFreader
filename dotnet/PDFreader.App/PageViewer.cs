@@ -284,9 +284,8 @@ public sealed class PageViewer : Border
     private (int widthPx, double pageW, double pageH) ComputeTarget()
     {
         _passwords.TryGetValue(_doc.Path, out var password);
-        var (w, h) = _renderer.GetPageSize(_doc.Path, password, Page);
-        // Swap for rotation
-        if (_rotation is 90 or 270) (w, h) = (h, w);
+        // Final (rotated) page box in points — matches what RenderPage produces.
+        var (w, h) = _renderer.GetRotatedPageSize(_doc.Path, password, Page, _rotation);
         // The viewer may not be measured yet (first render) — fall back to the
         // host window's client size so fit modes still produce a usable scale.
         double availW = ActualWidth > 40 ? ActualWidth - 40 : 0;

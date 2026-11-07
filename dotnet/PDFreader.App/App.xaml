@@ -95,12 +95,12 @@
                                     <Setter TargetName="Bd" Property="Background" Value="{StaticResource Brush.SurfaceHover}"/>
                                     <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
                                 </Trigger>
+                                <!-- Active state: Tag=="active" (sidebar toggle) or
+                                     Tag starting with "active:" (SetTool writes
+                                     "active:<tool>" so the tag keeps the tool name). -->
                                 <Trigger Property="Tag" Value="active">
                                     <Setter TargetName="Bd" Property="Background" Value="{StaticResource Brush.AccentSoft}"/>
                                     <Setter Property="Foreground" Value="{StaticResource Brush.Accent}"/>
-                                </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Opacity" Value="0.45"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>

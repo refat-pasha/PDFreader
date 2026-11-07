@@ -397,7 +397,16 @@ public partial class MainWindow : Window
         ActiveViewer?.SetTool(Enum.Parse<PageViewer.ToolMode>(tool, ignoreCase: true));
         foreach (var button in new[] { ToolSelect, ToolInk, ToolHighlighter, ToolRectangle, ToolEllipse, ToolArrow, ToolEraser })
         {
-            button.Tag = string.Equals((string?)button.Tag, tool, StringComparison.OrdinalIgnoreCase) ? "active" : (string)button.Tag;
+            // Keep the tool name in Tag (other code reads it) and drive the
+            // visual active state directly — the style's Tag trigger expects
+            // the exact value "active", which would clobber the tool name.
+            var isThisTool = string.Equals((string?)button.Tag, tool, StringComparison.OrdinalIgnoreCase);
+            button.Background = isThisTool
+                ? (Brush)FindResource("Brush.AccentSoft")
+                : Brushes.Transparent;
+            button.Foreground = isThisTool
+                ? (Brush)FindResource("Brush.Accent")
+                : (Brush)FindResource("Brush.TextSecondary");
         }
         SetStatus($"Tool: {tool}");
     }

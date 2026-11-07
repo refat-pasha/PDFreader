@@ -31,14 +31,15 @@ public sealed class PdfRenderer : IDisposable
         lock (_gate)
         {
             var entry = GetOrLoad(path);
-            // Single render pass: derive output height from the cached point
-            // aspect instead of rendering a second time to measure.
+            // Single render pass: derive the output box from the cached point
+            // aspect. widthPixels is the desired FINAL (rotated) width.
             var (ptW, ptH) = GetPageSizeUnsafe(entry, password, pageNumber);
-            var scale = widthPixels / (double)ptW;
-            var outW = (int)Math.Round(ptW * scale);
-            var outH = (int)Math.Round(ptH * scale);
-            // Rotation swaps the output box (PDFtoImage rotates after layout).
-            if (rotationDegrees is 90 or 270) (outW, outH) = (outH, outW);
+            var (rotW, rotH) = rotationDegrees is 90 or 270 ? (ptH, ptW) : (ptW, ptH);
+            var scale = widthPixels / (double)rotW;
+            var outW = (int)Math.Round(rotW * scale);
+            var outH = (int)Math.Round(rotH * scale);
+            // Options Width/Height describe the final bitmap (rotation already
+            // accounted for) — never pre-swap here, PDFtoImage rotates itself.
             var options = BuildOptions(password, rotationDegrees, outW, outH);
             using var bitmap = Conversion.ToImage(entry.Bytes, pageNumber - 1, password, options);
             using var image = SKImage.FromBitmap(bitmap);
@@ -69,6 +70,17 @@ public sealed class PdfRenderer : IDisposable
         var size = ((double)bitmap.Width, (double)bitmap.Height);
         entry.PageSizes[pageNumber] = size;
         return size;
+    }
+
+    /// <summary>Page box in points after the given rotation is applied.</summary>
+    public (double W, double H) GetRotatedPageSize(string path, string? password, int pageNumber, int rotationDegrees)
+    {
+        lock (_gate)
+        {
+            var entry = GetOrLoad(path);
+            var (w, h) = GetPageSizeUnsafe(entry, password, pageNumber);
+            return rotationDegrees is 90 or 270 ? (h, w) : (w, h);
+        }
     }
 
     private static RenderOptions BuildOptions(string? password, int rotationDegrees, int? width, int? height) =>
