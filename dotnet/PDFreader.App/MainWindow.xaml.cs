@@ -20,7 +20,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, string> _passwords = new(StringComparer.OrdinalIgnoreCase);
 
     private double _zoom = 1.0;
-    private ZoomMode _zoomMode = ZoomMode.FitPage;
+    private ZoomMode _zoomMode = ZoomMode.FitWidth;
     private int _rotation;
     private DateTime _lastZoomTime; // UTC timestamp of last applied Ctrl+wheel zoom (touchpad throttle)
     private readonly Dictionary<string, PageViewer> _viewersByDocId = new();
@@ -748,8 +748,9 @@ public partial class MainWindow : Window
             var session = _persistence.LoadSession();
             if (session is null) return;
 
-            // Never restore a custom zoom: a document must always open fitted to the window.
-            _zoomMode = ZoomMode.FitPage;
+            // Documents always open fit-width (Refat's preference); a stale
+            // custom zoom from a previous session is never restored.
+            _zoomMode = ZoomMode.FitWidth;
 
             foreach (var path in session.Paths.Take(8))
             {
