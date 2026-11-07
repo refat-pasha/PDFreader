@@ -281,11 +281,10 @@ public sealed class PageViewer : Border
             scale = _zoom;
         scale = Math.Clamp(scale, 0.1, 6.0);
         _zoom = scale;
-        // Render at device-pixel resolution so text stays crisp on high-DPI
-        // displays; WPF then lays the bitmap out at logical (DIP) size.
-        var dpiScale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        Diagnostics.Trace($"ComputeTarget: page {w}x{h}pt avail {availW:0}x{availH:0} mode={_mode} scale={scale:0.00} dpi={dpiScale:0.00}");
-        return ((int)Math.Round(w * scale * dpiScale), w, h);
+        // Fixed 2× supersampling: render at twice the logical size and let WPF
+        // downscale 2:1. Deterministic on any DPI, avoids all metadata math.
+        Diagnostics.Trace($"ComputeTarget: page {w}x{h}pt avail {availW:0}x{availH:0} mode={_mode} scale={scale:0.00}");
+        return ((int)Math.Round(w * scale * 2), w, h);
     }
 
     private void RenderPage(bool force = false)
@@ -323,19 +322,22 @@ public sealed class PageViewer : Border
                 Dispatcher.BeginInvoke(() =>
                 {
                     if (token.IsCancellationRequested) return;
+                    // Decode at 96dpi so the WPF "natural size" equals the pixel
+                    // count — then our explicit Width/Height is a pure 2:1
+                    // downscale from the supersampled render. No DPI math.
                     var image = new BitmapImage();
                     using var stream = new MemoryStream(png);
                     image.BeginInit();
                     image.CacheOption = BitmapCacheOption.OnLoad;
                     image.StreamSource = stream;
+                    image.DecodePixelWidth = widthPx; // hint: decode at native size
                     image.EndInit();
                     image.Freeze();
                     _pageImage.Source = image;
-                    // Lay the device-pixel bitmap out at logical (DIP) size so
-                    // 1 bitmap pixel = 1 physical pixel: no stretching, no blur.
-                    var dpiScale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-                    var logicalW = image.PixelWidth / dpiScale;
-                    var logicalH = image.PixelHeight / dpiScale;
+                    // Bitmap is 2× the logical size (supersampled). Explicit
+                    // logical dimensions give an exact 2:1 downscale.
+                    var logicalW = widthPx / 2.0;
+                    var logicalH = Math.Round(logicalW * image.PixelHeight / (double)image.PixelWidth, 0);
                     _pageImage.Width = logicalW;
                     _pageImage.Height = logicalH;
                     _pageHost.Width = logicalW;
