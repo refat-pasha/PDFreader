@@ -281,8 +281,11 @@ public sealed class PageViewer : Border
             scale = _zoom;
         scale = Math.Clamp(scale, 0.1, 6.0);
         _zoom = scale;
-        Diagnostics.Trace($"ComputeTarget: page {w}x{h}pt avail {availW:0}x{availH:0} mode={_mode} scale={scale:0.00}");
-        return ((int)Math.Round(w * scale), w, h);
+        // Render at device-pixel resolution so text stays crisp on high-DPI
+        // displays; WPF then lays the bitmap out at logical (DIP) size.
+        var dpiScale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        Diagnostics.Trace($"ComputeTarget: page {w}x{h}pt avail {availW:0}x{availH:0} mode={_mode} scale={scale:0.00} dpi={dpiScale:0.00}");
+        return ((int)Math.Round(w * scale * dpiScale), w, h);
     }
 
     private void RenderPage(bool force = false)
@@ -328,12 +331,17 @@ public sealed class PageViewer : Border
                     image.EndInit();
                     image.Freeze();
                     _pageImage.Source = image;
-                    _pageImage.Width = image.PixelWidth;
-                    _pageImage.Height = image.PixelHeight;
-                    _pageHost.Width = image.PixelWidth;
-                    _pageHost.Height = image.PixelHeight;
-                    _overlay.Width = image.PixelWidth;
-                    _overlay.Height = image.PixelHeight;
+                    // Lay the device-pixel bitmap out at logical (DIP) size so
+                    // 1 bitmap pixel = 1 physical pixel: no stretching, no blur.
+                    var dpiScale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+                    var logicalW = image.PixelWidth / dpiScale;
+                    var logicalH = image.PixelHeight / dpiScale;
+                    _pageImage.Width = logicalW;
+                    _pageImage.Height = logicalH;
+                    _pageHost.Width = logicalW;
+                    _pageHost.Height = logicalH;
+                    _overlay.Width = logicalW;
+                    _overlay.Height = logicalH;
                     // Keep page point size in sync for annotation coordinate mapping.
                     try
                     {
