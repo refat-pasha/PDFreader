@@ -168,6 +168,9 @@ public sealed class PageViewer : Border
         // previous page's scroll offset (buttons, wheel, thumbnails, etc.).
         _scroll.ScrollToTop();
         _scroll.ScrollToHorizontalOffset(0);
+        // Selection state belongs to the old page.
+        ClearWordHighlights();
+        _wordCache = null;
         PageChanged?.Invoke(Page);
     }
 
@@ -528,9 +531,35 @@ public sealed class PageViewer : Border
 
     private (double W, double H) _pagePointSize = (612, 792);
 
+    // ------------------------------------------------------------ text selection
+
+    private bool _selecting;
+    private System.Windows.Point _selStart;
+    private System.Windows.Shapes.Rectangle? _selRect;
+    private List<PdfService.WordBox>? _wordCache;
+    private int _wordCachePage = -1;
+
+    /// <summary>Raised when the user copies selected text; MainWindow shows status.</summary>
+    public event Action<string>? TextCopied;
+
     private void OnOverlayDown(object sender, MouseButtonEventArgs e)
     {
-        if (_tool == ToolMode.Select) return;
+        // Select tool: drag a rectangle to select text; words inside highlight.
+        if (_tool == ToolMode.Select)
+        {
+            _selecting = true;
+            _selStart = e.GetPosition(_overlay);
+            _selRect = new System.Windows.Shapes.Rectangle
+            {
+                Stroke = new SolidColorBrush(Color.FromRgb(0x7A, 0xA2, 0xF7)),
+                StrokeThickness = 1,
+                Fill = new SolidColorBrush(Color.FromArgb(0x3C, 0x7A, 0xA2, 0xF7)),
+            };
+            _overlay.Children.Add(_selRect);
+            _overlay.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
         var position = e.GetPosition(_overlay);
         if (_tool == ToolMode.Eraser)
         {
@@ -623,6 +652,18 @@ public sealed class PageViewer : Border
 
     private void OnOverlayMove(object sender, MouseEventArgs e)
     {
+        if (_selecting && _selRect is not null)
+        {
+            var cur = e.GetPosition(_overlay);
+            var left = Math.Min(_selStart.X, cur.X);
+            var top = Math.Min(_selStart.Y, cur.Y);
+            Canvas.SetLeft(_selRect, left);
+            Canvas.SetTop(_selRect, top);
+            _selRect.Width = Math.Abs(cur.X - _selStart.X);
+            _selRect.Height = Math.Abs(cur.Y - _selStart.Y);
+            HighlightWordsIn(left, top, _selRect.Width, _selRect.Height);
+            return;
+        }
         if (!_drawing) return;
         var point = e.GetPosition(_overlay);
         if (_inkStroke is not null)
@@ -654,6 +695,25 @@ public sealed class PageViewer : Border
 
     private void OnOverlayUp(object sender, MouseButtonEventArgs e)
     {
+        if (_selecting)
+        {
+            _selecting = false;
+            _overlay.ReleaseMouseCapture();
+            if (_selRect is not null)
+            {
+                var left = Canvas.GetLeft(_selRect);
+                var top = Canvas.GetTop(_selRect);
+                var selected = CopyWordsIn(left, top, _selRect.Width, _selRect.Height);
+                _overlay.Children.Remove(_selRect);
+                _selRect = null;
+                ClearWordHighlights();
+                if (!string.IsNullOrEmpty(selected))
+                {
+                    try { Clipboard.SetText(selected); TextCopied?.Invoke(selected); } catch { }
+                }
+            }
+            return;
+        }
         if (!_drawing) return;
         _drawing = false;
         _overlay.ReleaseMouseCapture();
@@ -783,6 +843,81 @@ public sealed class PageViewer : Border
     }
 
     public void SetPageSize((double W, double H) size) => _pagePointSize = size;
+
+    // ------------------------------------------------- selection word mapping
+
+    /// <summary>Words of the current page in OVERLAY pixel coordinates (rotation-aware).</summary>
+    private List<(string Text, System.Windows.Rect Box)> WordsInOverlayCoords()
+    {
+        if (_wordCache is null || _wordCachePage != Page)
+        {
+            _passwords.TryGetValue(_doc.Path, out var pw);
+            try { _wordCache = _pdf.GetPageWords(_doc.Path, pw, Page); }
+            catch { _wordCache = new(); }
+            _wordCachePage = Page;
+        }
+        var result = new List<(string, System.Windows.Rect)>();
+        foreach (var w in _wordCache!)
+        {
+            // Word box: (X=left, Y=bottom, W, H) in page points, bottom-left origin.
+            // Corners in point space:
+            var bl = new PointD(w.X, w.Y);                          // bottom-left
+            var br = new PointD(w.X + w.Width, w.Y);                // bottom-right
+            var tl = new PointD(w.X, w.Y + w.Height);               // top-left
+            var tr = new PointD(w.X + w.Width, w.Y + w.Height);     // top-right
+            var p1 = FromPagePoint(bl); var p2 = FromPagePoint(br);
+            var p3 = FromPagePoint(tl); var p4 = FromPagePoint(tr);
+            var xs = new[] { p1.X, p2.X, p3.X, p4.X };
+            var ys = new[] { p1.Y, p2.Y, p3.Y, p4.Y };
+            var box = new System.Windows.Rect(xs.Min(), ys.Min(), xs.Max() - xs.Min(), ys.Max() - ys.Min());
+            result.Add((w.Text, box));
+        }
+        return result;
+    }
+
+    private readonly List<System.Windows.Shapes.Rectangle> _wordHighlights = new();
+
+    private void HighlightWordsIn(double left, double top, double width, double height)
+    {
+        ClearWordHighlights();
+        if (width < 2 || height < 2) return;
+        var drag = new System.Windows.Rect(left, top, width, height);
+        foreach (var (text, box) in WordsInOverlayCoords())
+        {
+            if (drag.IntersectsWith(box) && box.Width > 0.5)
+            {
+                var hl = new System.Windows.Shapes.Rectangle
+                {
+                    Width = box.Width,
+                    Height = box.Height,
+                    Fill = new SolidColorBrush(Color.FromArgb(0x66, 0x7A, 0xA2, 0xF7)),
+                    IsHitTestVisible = false,
+                };
+                Canvas.SetLeft(hl, box.Left);
+                Canvas.SetTop(hl, box.Top);
+                _overlay.Children.Add(hl);
+                _wordHighlights.Add(hl);
+            }
+        }
+    }
+
+    private string CopyWordsIn(double left, double top, double width, double height)
+    {
+        if (width < 2 || height < 2) return "";
+        var drag = new System.Windows.Rect(left, top, width, height);
+        var words = WordsInOverlayCoords()
+            .Where(w => w.Box.IntersectsWith(drag) && w.Box.Width > 0.5)
+            .OrderBy(w => Math.Round(w.Box.Top / Math.Max(4, w.Box.Height * 0.6)))
+            .ThenBy(w => w.Box.Left)
+            .Select(w => w.Text);
+        return string.Join(" ", words);
+    }
+
+    private void ClearWordHighlights()
+    {
+        foreach (var hl in _wordHighlights) _overlay.Children.Remove(hl);
+        _wordHighlights.Clear();
+    }
 
     /// <summary>Stamps an image at the center of the current page (annotation kind Image).</summary>
     public void InsertImageStamp(string imagePath)

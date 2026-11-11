@@ -44,6 +44,22 @@ public sealed class PdfService
         return string.Join(" ", page.GetWords().Select(w => w.Text));
     }
 
+    /// <summary>
+    /// Words of a page with their bounding boxes in PDF points (bottom-left
+    /// origin), for the Select tool's text selection.
+    /// </summary>
+    public sealed record WordBox(string Text, double X, double Y, double Width, double Height);
+
+    public List<WordBox> GetPageWords(string path, string? password, int pageNumber)
+    {
+        using var doc = OpenPig(path, password);
+        if (pageNumber < 1 || pageNumber > doc.NumberOfPages) return new();
+        var page = doc.GetPage(pageNumber);
+        return page.GetWords()
+            .Select(w => new WordBox(w.Text, w.BoundingBox.Left, w.BoundingBox.Bottom, w.BoundingBox.Width, w.BoundingBox.Height))
+            .ToList();
+    }
+
     public List<SearchResult> Search(string path, string docId, string docName, string? password, string query, int maxResults = 300)
     {
         var results = new List<SearchResult>();

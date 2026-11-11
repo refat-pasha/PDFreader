@@ -124,6 +124,11 @@ public partial class MainWindow : Window
 
         var viewer = new PageViewer(doc, _renderer, _pdf, _passwords, _workspace);
         _viewersByDocId[doc.Id] = viewer;
+        viewer.TextCopied += text =>
+        {
+            var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+            SetStatus($"Copied {words} word{(words == 1 ? "" : "s")} to clipboard");
+        };
         viewer.ZoomRequested += zoomIn =>
         {
             if (_workspace.ActiveDocument?.Id != doc.Id) return;
@@ -410,8 +415,7 @@ public partial class MainWindow : Window
         {
             // Tag keeps the tool name (never "active" — that value crashed
             // Enum.Parse); the visual state applies directly via brushes.
-            var isThisTool = string.Equals((string?)button.Tag, tool, StringComparison.OrdinalIgnoreCase)
-                && tool != "Select";
+            var isThisTool = string.Equals((string?)button.Tag, tool, StringComparison.OrdinalIgnoreCase);
             button.Background = isThisTool
                 ? (Brush)FindResource("Brush.AccentSoft")
                 : Brushes.Transparent;
