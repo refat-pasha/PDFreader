@@ -33,57 +33,57 @@
                         <TextBlock Text="PDFreader" Margin="8,0,0,0" FontWeight="SemiBold" FontSize="13"
                                    VerticalAlignment="Center"/>
                     </StackPanel>
-                    <Button Click="OnOpenClick" ToolTip="Open (Ctrl+O)">
+                    <Button Click="OnOpenClick" ToolTip="Open (Ctrl+O)" AutomationProperties.Name="Open">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Glyph}" Text="&#xE8E5;"/>
                             <TextBlock Text="Open" Margin="7,0,0,0"/>
                         </StackPanel>
                     </Button>
-                    <Button x:Name="SaveButton" Click="OnSaveClick" ToolTip="Save annotated copy (Ctrl+S)">
+                    <Button x:Name="SaveButton" Click="OnSaveClick" ToolTip="Save annotated copy (Ctrl+S)" AutomationProperties.Name="Save annotated copy">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Glyph}" Text="&#xE74E;"/>
                             <TextBlock Text="Save" Margin="7,0,0,0"/>
                         </StackPanel>
                     </Button>
-                    <Button Click="OnExportClick" ToolTip="Export (Ctrl+Shift+E)">
+                    <Button Click="OnExportClick" ToolTip="Export (Ctrl+Shift+E)" AutomationProperties.Name="Export">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Glyph}" Text="&#xE898;"/>
                             <TextBlock Text="Export" Margin="7,0,0,0"/>
                         </StackPanel>
                     </Button>
-                    <Button Click="OnPrintClick" ToolTip="Print (Ctrl+P)">
+                    <Button Click="OnPrintClick" ToolTip="Print (Ctrl+P)" AutomationProperties.Name="Print">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Glyph}" Text="&#xE749;"/>
                             <TextBlock Text="Print" Margin="7,0,0,0"/>
                         </StackPanel>
                     </Button>
                     <Separator Style="{StaticResource ChromeSeparator}"/>
-                    <Button Click="OnUndoClick" ToolTip="Undo (Ctrl+Z)">
+                    <Button Click="OnUndoClick" ToolTip="Undo (Ctrl+Z)" AutomationProperties.Name="Undo">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Glyph}" Text="&#xE7A7;"/>
                             <TextBlock Text="Undo" Margin="7,0,0,0"/>
                         </StackPanel>
                     </Button>
-                    <Button Click="OnRedoClick" ToolTip="Redo (Ctrl+Y)">
+                    <Button Click="OnRedoClick" ToolTip="Redo (Ctrl+Y)" AutomationProperties.Name="Redo">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Glyph}" Text="&#xE7A6;"/>
                             <TextBlock Text="Redo" Margin="7,0,0,0"/>
                         </StackPanel>
                     </Button>
                     <Separator Style="{StaticResource ChromeSeparator}"/>
-                    <Button x:Name="SidebarButton" Click="OnSidebarClick" ToolTip="Toggle sidebar" Tag="active">
+                    <Button x:Name="SidebarButton" Click="OnSidebarClick" ToolTip="Toggle sidebar" Tag="active" AutomationProperties.Name="Sidebar">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Glyph}" Text="&#xE700;"/>
                             <TextBlock Text="Sidebar" Margin="7,0,0,0"/>
                         </StackPanel>
                     </Button>
-                    <Button Click="OnNotesClick" ToolTip="Notebook (Ctrl+M)">
+                    <Button Click="OnNotesClick" ToolTip="Notebook (Ctrl+M)" AutomationProperties.Name="Notes">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Glyph}" Text="&#xE70B;"/>
                             <TextBlock Text="Notes" Margin="7,0,0,0"/>
                         </StackPanel>
                     </Button>
-                    <Button Click="OnInsertImageClick" ToolTip="Stamp an image on the current page">
+                    <Button Click="OnInsertImageClick" ToolTip="Stamp an image on the current page" AutomationProperties.Name="Insert image">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Glyph}" Text="&#xE91B;"/>
                             <TextBlock Text="Insert image" Margin="7,0,0,0"/>

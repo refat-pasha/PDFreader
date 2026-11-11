@@ -107,6 +107,16 @@ public sealed class PageViewer : Border
         _overlay.MouseUp += OnOverlayUp;
         _overlay.MouseWheel += OnOverlayWheel;
         _scroll.PreviewMouseWheel += OnScrollWheel;
+        // Hover: show the document location (path + page) like browsers do.
+        ToolTip = new ToolTip
+        {
+            Content = $"{_doc.Path}\nPage {Page} of {_doc.PageCount}",
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Relative,
+            HorizontalOffset = 16,
+            VerticalOffset = 16,
+        };
+        _overlay.MouseEnter += (_, _) => { if (ToolTip is ToolTip tt) tt.IsOpen = true; };
+        _overlay.MouseLeave += (_, _) => { if (ToolTip is ToolTip tt) tt.IsOpen = false; };
 
         _workspace.StateChanged += () => Dispatcher.BeginInvoke(RedrawAnnotations);
         // Fit modes need the real viewport; re-render when the layout settles.
@@ -703,14 +713,27 @@ public sealed class PageViewer : Border
             {
                 var left = Canvas.GetLeft(_selRect);
                 var top = Canvas.GetTop(_selRect);
-                var selected = CopyWordsIn(left, top, _selRect.Width, _selRect.Height);
+                var width = _selRect.Width;
+                var height = _selRect.Height;
                 _overlay.Children.Remove(_selRect);
                 _selRect = null;
-                ClearWordHighlights();
-                if (!string.IsNullOrEmpty(selected))
+                // Reader-style selection: the highlight STAYS after release;
+                // Ctrl+C copies it (CopySelection). Auto-copy on release was
+                // confusing and produced out-of-order pastes.
+                _hasSelection = false;
+                _selectionText = "";
+                if (width >= 2 && height >= 2)
                 {
-                    try { Clipboard.SetText(selected); TextCopied?.Invoke(selected); } catch { }
+                    var selected = WordsInRectOrdered(left, top, width, height);
+                    if (selected.Count > 0)
+                    {
+                        _selectionText = string.Join(" ", selected);
+                        _hasSelection = true;
+                        // Re-highlight the exact selection (keeps it on screen).
+                        HighlightWordsIn(left, top, width, height);
+                    }
                 }
+                if (!_hasSelection) ClearWordHighlights();
             }
             return;
         }
@@ -917,6 +940,34 @@ public sealed class PageViewer : Border
     {
         foreach (var hl in _wordHighlights) _overlay.Children.Remove(hl);
         _wordHighlights.Clear();
+    }
+
+    // ------------------------------------------------------------ selection state
+
+    private bool _hasSelection;
+    private string _selectionText = "";
+
+    /// <summary>
+    /// Words inside the rectangle in the PDF's natural reading order (PdfPig
+    /// yields words in content-stream order, which matches the visual line
+    /// order for normally-authored PDFs — the geometric sort scrambled text
+    /// when a selection crossed columns or styled spans).
+    /// </summary>
+    private List<string> WordsInRectOrdered(double left, double top, double width, double height)
+    {
+        var drag = new System.Windows.Rect(left, top, width, height);
+        return WordsInOverlayCoords()
+            .Where(w => w.Box.IntersectsWith(drag) && w.Box.Width > 0.5)
+            .Select(w => w.Text)
+            .ToList();
+    }
+
+    /// <summary>Copies the active selection to the clipboard (Ctrl+C). Returns true when copied.</summary>
+    public bool CopySelection()
+    {
+        if (!_hasSelection || string.IsNullOrEmpty(_selectionText)) return false;
+        try { Clipboard.SetText(_selectionText); TextCopied?.Invoke(_selectionText); return true; }
+        catch { return false; }
     }
 
     /// <summary>Stamps an image at the center of the current page (annotation kind Image).</summary>

@@ -25,7 +25,13 @@ public static class PdfFlattenExporter
         var tempPath = Path.Combine(Path.GetTempPath(), $"pdfreader-export-{Guid.NewGuid():N}.pdf");
         try
         {
-            using var document = SKDocument.CreatePdf(tempPath);
+            // SKDocument.CreatePdf(string) is broken in this SkiaSharp build
+            // (returns a null native stream -> ArgumentNullException 'stream').
+            // Compose into memory with the stream overload, then write bytes.
+            using var pdfStream = new SKDynamicMemoryWStream();
+            using var document = SKDocument.CreatePdf(pdfStream);
+            if (document is null)
+                throw new InvalidOperationException("Skia's PDF backend is unavailable in this environment.");
             for (var page = 1; page <= pageCount; page++)
             {
                 // 2x scale for crisp output (144 dpi).
@@ -45,14 +51,20 @@ public static class PdfFlattenExporter
                 document.EndPage();
             }
             document.Close();
+            // Atomic commit: write memory bytes to a temp file, then move.
+            using var data = pdfStream.CopyToData();
+            var targetDir = Path.GetDirectoryName(targetPath)!;
+            Directory.CreateDirectory(targetDir);
+            using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                data.AsStream().CopyTo(fs);
+                fs.Flush();
+            }
         }
         finally
         {
-            // Commit: move the completed file into place atomically.
             if (File.Exists(tempPath))
             {
-                var targetDir = Path.GetDirectoryName(targetPath)!;
-                Directory.CreateDirectory(targetDir);
                 File.Move(tempPath, targetPath, overwrite: true);
             }
         }

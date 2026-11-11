@@ -644,27 +644,96 @@ public partial class MainWindow : Window
 
     private void OnInsertImageClick(object sender, RoutedEventArgs e) => OnOrganizeClick(sender, e);
 
+    private bool _printing;
+
     private void OnPrintClick(object sender, RoutedEventArgs e)
     {
         var doc = _workspace.ActiveDocument;
         var viewer = ActiveViewer;
-        if (doc is null || viewer is null) return;
-        try
+        if (doc is null || viewer is null) { Diagnostics.Trace("print: no active doc"); return; }
+        if (_printing) { SetStatus("Already printing…"); return; }
+        _printing = true;
+        SetStatus("Preparing print…");
+        // Export + rasterize OFF the UI thread: both do heavy synchronous
+        // PDFium/Skia work on the shared renderer gate; doing them inline
+        // froze the window when a background render held the gate.
+        var annotations = _workspace.Annotations.Where(a => a.DocId == doc.Id).ToList();
+        var sourcePath = doc.Path;
+        var pageCount = doc.PageCount;
+        _passwords.TryGetValue(sourcePath, out var password);
+        Task.Run(async () =>
         {
-            var temp = Path.Combine(Path.GetTempPath(), $"pdfreader-print-{Guid.NewGuid():N}.pdf");
-            viewer.ExportAnnotatedPdf(temp);
-            var process = new System.Diagnostics.ProcessStartInfo(temp)
+            try
             {
-                Verb = "print",
-                UseShellExecute = true,
-            };
-            System.Diagnostics.Process.Start(process);
-            SetStatus("Sent to the default PDF printer.");
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Print", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
+                Diagnostics.Trace("print: exporting annotated pdf");
+                var temp = Path.Combine(Path.GetTempPath(), $"pdfreader-print-{Guid.NewGuid():N}.pdf");
+                PdfFlattenExporter.Export(_renderer, _pdf, sourcePath, password, pageCount, temp, annotations);
+                Diagnostics.Trace("print: rasterizing pages");
+                var bitmaps = PdfPrintRenderer.RenderAllPages(temp);
+                Diagnostics.Trace($"print: {bitmaps.Count} pages rasterized, showing dialog");
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    _printing = false;
+                    var dialog = new System.Windows.Controls.PrintDialog();
+                    if (dialog.ShowDialog() != true)
+                    {
+                        Diagnostics.Trace("print: dialog canceled");
+                        SetStatus("Print canceled.");
+                        return;
+                    }
+                    try
+                    {
+                        dialog.PrintTicket.PageOrientation = System.Printing.PageOrientation.Portrait;
+                        double margin = 24;
+                        var fixedDoc = new System.Windows.Documents.FixedDocument();
+                        foreach (var bmp in bitmaps)
+                        {
+                            var page = new System.Windows.Controls.Image { Source = bmp };
+                            var fixedPage = new System.Windows.Documents.FixedPage
+                            {
+                                Width = dialog.PrintableAreaWidth,
+                                Height = dialog.PrintableAreaHeight,
+                            };
+                            var scale = Math.Min((dialog.PrintableAreaWidth - 2 * margin) / bmp.Width,
+                                                 (dialog.PrintableAreaHeight - 2 * margin) / bmp.Height);
+                            page.Width = bmp.Width * scale;
+                            page.Height = bmp.Height * scale;
+                            System.Windows.Controls.Canvas.SetLeft(page, 0);
+                            fixedPage.Children.Add(page);
+                            FixedPageSetCenter(page, fixedPage);
+                            var pageContent = new System.Windows.Documents.PageContent();
+                            ((System.Windows.Markup.IAddChild)pageContent).AddChild(fixedPage);
+                            fixedDoc.Pages.Add(pageContent);
+                        }
+                        dialog.PrintDocument(fixedDoc.DocumentPaginator, $"PDFreader — {doc.Name}");
+                        Diagnostics.Trace("print: sent to printer");
+                        SetStatus($"Printing {doc.Name}…");
+                    }
+                    catch (Exception ex)
+                    {
+                        Diagnostics.Trace($"print: print failed: {ex.Message}");
+                        MessageBox.Show(this, ex.Message, "Print", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Diagnostics.Trace($"print: prepare failed: {ex.Message}");
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    _printing = false;
+                    SetStatus("Print failed.");
+                    MessageBox.Show(this, ex.Message, "Print", MessageBoxButton.OK, MessageBoxImage.Warning);
+                });
+            }
+        });
+    }
+
+    private static void FixedPageSetCenter(System.Windows.Controls.Image page, System.Windows.Documents.FixedPage fixedPage)
+    {
+        page.Margin = new Thickness(
+            Math.Max(0, (fixedPage.Width - page.Width) / 2),
+            Math.Max(0, (fixedPage.Height - page.Height) / 2), 0, 0);
     }
 
     private void OnExitClick(object sender, RoutedEventArgs e) => Close();
@@ -832,6 +901,10 @@ public partial class MainWindow : Window
         if (!ctrl) return;
         switch (e.Key)
         {
+            case Key.C:
+                // Ctrl+C copies the active text selection (Select tool).
+                if (ActiveViewer?.CopySelection() == true) e.Handled = true;
+                break;
             case Key.O: OpenWithDialog(); e.Handled = true; break;
             case Key.S: SaveAnnotatedCopy(); e.Handled = true; break;
             case Key.Z: OnUndoClick(sender, e); e.Handled = true; break;
