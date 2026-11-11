@@ -882,14 +882,19 @@ public sealed class PageViewer : Border
         var result = new List<(string, System.Windows.Rect)>();
         foreach (var w in _wordCache!)
         {
-            // Word box: (X=left, Y=bottom, W, H) in page points, bottom-left origin.
-            // Corners in point space:
-            var bl = new PointD(w.X, w.Y);                          // bottom-left
-            var br = new PointD(w.X + w.Width, w.Y);                // bottom-right
-            var tl = new PointD(w.X, w.Y + w.Height);               // top-left
-            var tr = new PointD(w.X + w.Width, w.Y + w.Height);     // top-right
-            var p1 = FromPagePoint(bl); var p2 = FromPagePoint(br);
-            var p3 = FromPagePoint(tl); var p4 = FromPagePoint(tr);
+            // PdfPig word boxes are in page points with a BOTTOM-LEFT origin
+            // (Y grows upward), but FromPagePoint expects the annotation
+            // convention: TOP-LEFT origin (Y grows downward). Feed it flipped
+            // coordinates or every word lands vertically mirrored — highlights
+            // appeared above the real text and the drag selected the wrong
+            // words. topY = pageHeight - (bottomY + height).
+            var topY = _pagePointSize.H - (w.Y + w.Height);
+            var tl = new PointD(w.X, topY);                          // top-left (flipped)
+            var tr = new PointD(w.X + w.Width, topY);                // top-right
+            var bl = new PointD(w.X, topY + w.Height);               // bottom-left
+            var br = new PointD(w.X + w.Width, topY + w.Height);     // bottom-right
+            var p1 = FromPagePoint(tl); var p2 = FromPagePoint(tr);
+            var p3 = FromPagePoint(bl); var p4 = FromPagePoint(br);
             var xs = new[] { p1.X, p2.X, p3.X, p4.X };
             var ys = new[] { p1.Y, p2.Y, p3.Y, p4.Y };
             var box = new System.Windows.Rect(xs.Min(), ys.Min(), xs.Max() - xs.Min(), ys.Max() - ys.Min());
