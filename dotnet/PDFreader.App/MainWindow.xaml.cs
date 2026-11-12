@@ -147,6 +147,8 @@ public partial class MainWindow : Window
             Cursor = Cursors.Hand,
             Tag = doc.Id,
             Child = BuildTabHeader(doc),
+            // Hover a tab to see where the file lives.
+            ToolTip = new ToolTip { Content = $"{doc.Path}\n{doc.PageCount} pages" },
         };
         tab.MouseLeftButtonDown += (_, _) => SelectDocument(doc);
         _tabsByDocId[doc.Id] = tab;
