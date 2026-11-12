@@ -107,16 +107,6 @@ public sealed class PageViewer : Border
         _overlay.MouseUp += OnOverlayUp;
         _overlay.MouseWheel += OnOverlayWheel;
         _scroll.PreviewMouseWheel += OnScrollWheel;
-        // Hover: show the document location (path + page) like browsers do.
-        ToolTip = new ToolTip
-        {
-            Content = $"{_doc.Path}\nPage {Page} of {_doc.PageCount}",
-            Placement = System.Windows.Controls.Primitives.PlacementMode.Relative,
-            HorizontalOffset = 16,
-            VerticalOffset = 16,
-        };
-        _overlay.MouseEnter += (_, _) => { if (ToolTip is ToolTip tt) tt.IsOpen = true; };
-        _overlay.MouseLeave += (_, _) => { if (ToolTip is ToolTip tt) tt.IsOpen = false; };
 
         _workspace.StateChanged += () => Dispatcher.BeginInvoke(RedrawAnnotations);
         // Fit modes need the real viewport; re-render when the layout settles.
