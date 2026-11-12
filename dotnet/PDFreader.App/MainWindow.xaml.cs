@@ -148,16 +148,19 @@ public partial class MainWindow : Window
             Tag = doc.Id,
             Child = BuildTabHeader(doc),
         };
-        // Hover a tab to see where the file lives. Set the tooltip as a plain
-        // string via ToolTipService on the tab AND each header child: WPF only
-        // shows the tooltip of the exact element under the cursor, and the
-        // header's TextBlocks otherwise swallow it.
-        var tabTip = $"{doc.Path}\n{doc.PageCount} pages";
+        // Hover a tab to see where the file lives — two channels so it always
+        // works: (1) tooltip via ToolTipService on the tab AND each header
+        // child (WPF only shows the tooltip of the exact element under the
+        // cursor; the header TextBlocks otherwise swallow it), and (2) the
+        // status bar shows the path while the cursor is anywhere on the tab.
+        var tabTip = $"{doc.Path}  •  {doc.PageCount} pages";
         ToolTipService.SetToolTip(tab, tabTip);
         ToolTipService.SetInitialShowDelay(tab, 250);
         if (tab.Child is StackPanel header)
             foreach (var child in header.Children.OfType<System.Windows.UIElement>())
                 ToolTipService.SetToolTip(child, tabTip);
+        tab.MouseEnter += (_, _) => { Diagnostics.Trace($"tab hover enter: {doc.Name}"); SetStatus(tabTip); };
+        tab.MouseLeave += (_, _) => { Diagnostics.Trace($"tab hover leave: {doc.Name}"); SetStatus($"{doc.Name} — {doc.PageCount} pages"); };
         tab.MouseLeftButtonDown += (_, _) => SelectDocument(doc);
         _tabsByDocId[doc.Id] = tab;
         TabStrip.Children.Add(tab);
