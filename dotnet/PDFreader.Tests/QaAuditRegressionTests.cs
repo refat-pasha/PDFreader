@@ -9,6 +9,7 @@ namespace PDFreader.Tests;
 /// document ids, annotation survival across tab close/reopen, undo isolation,
 /// corrupt-JSON quarantine, and flatten-export mark scaling.
 /// </summary>
+[Collection("PersistenceRoot")]
 public class QaAuditRegressionTests
 {
     [Fact]

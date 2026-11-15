@@ -4,6 +4,7 @@ using Xunit;
 
 namespace PDFreader.Tests;
 
+[Collection("PersistenceRoot")]
 public class ExportTests : IDisposable
 {
     private readonly string _dir;
