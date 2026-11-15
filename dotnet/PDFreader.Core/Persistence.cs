@@ -54,6 +54,38 @@ public sealed class Persistence
         }
     }
 
+    /// <summary>
+    /// Loads a JSON list; on deserialization failure the corrupt file is
+    /// QUARANTINED (renamed .corrupt-{timestamp}) instead of being left in
+    /// place — previously a truncated write made the next Save overwrite the
+    /// user's entire annotation/note/bookmark history with an empty list.
+    /// </summary>
+    private List<T> LoadListOrQuarantine<T>(string path) where T : class
+    {
+        try
+        {
+            if (!File.Exists(path)) return new List<T>();
+            return JsonSerializer.Deserialize<List<T>>(File.ReadAllText(path), Json) ?? new List<T>();
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or NotSupportedException)
+        {
+            try
+            {
+                var quarantine = $"{path}.corrupt-{DateTime.UtcNow:yyyyMMdd-HHmmss}";
+                File.Move(path, quarantine);
+                File.AppendAllText(Path.Combine(Root, "persistence.log"),
+                    $"{DateTime.UtcNow:O} quarantined corrupt {Path.GetFileName(path)}: {ex.Message}{Environment.NewLine}");
+            }
+            catch { /* quarantine best-effort; still return empty */ }
+            return new List<T>();
+        }
+        catch
+        {
+            // IO errors (locked/missing) — return empty but keep the file.
+            return new List<T>();
+        }
+    }
+
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
@@ -87,60 +119,27 @@ public sealed class Persistence
     private string AnnotationsPath => Path.Combine(Root, "annotations.json");
 
     public void SaveAnnotations(IReadOnlyList<Annotation> annotations) =>
-        WriteGuarded(() => File.WriteAllText(AnnotationsPath, JsonSerializer.Serialize(annotations, Json)));
+        WriteGuarded(() => WriteAllTextAtomic(AnnotationsPath, JsonSerializer.Serialize(annotations, Json)));
 
-    public List<Annotation> LoadAnnotations()
-    {
-        try
-        {
-            if (!File.Exists(AnnotationsPath)) return new List<Annotation>();
-            return JsonSerializer.Deserialize<List<Annotation>>(File.ReadAllText(AnnotationsPath), Json) ?? new();
-        }
-        catch
-        {
-            return new List<Annotation>();
-        }
-    }
+    public List<Annotation> LoadAnnotations() => LoadListOrQuarantine<Annotation>(AnnotationsPath);
 
     // --- Notes --------------------------------------------------------------
 
     private string NotesPath => Path.Combine(Root, "notes.json");
 
     public void SaveNotes(IReadOnlyList<Note> notes) =>
-        WriteGuarded(() => File.WriteAllText(NotesPath, JsonSerializer.Serialize(notes, Json)));
+        WriteGuarded(() => WriteAllTextAtomic(NotesPath, JsonSerializer.Serialize(notes, Json)));
 
-    public List<Note> LoadNotes()
-    {
-        try
-        {
-            if (!File.Exists(NotesPath)) return new List<Note>();
-            return JsonSerializer.Deserialize<List<Note>>(File.ReadAllText(NotesPath), Json) ?? new();
-        }
-        catch
-        {
-            return new List<Note>();
-        }
-    }
+    public List<Note> LoadNotes() => LoadListOrQuarantine<Note>(NotesPath);
 
     // --- Bookmarks ----------------------------------------------------------
 
     private string BookmarksPath => Path.Combine(Root, "bookmarks.json");
 
     public void SaveBookmarks(IReadOnlyList<Bookmark> bookmarks) =>
-        WriteGuarded(() => File.WriteAllText(BookmarksPath, JsonSerializer.Serialize(bookmarks, Json)));
+        WriteGuarded(() => WriteAllTextAtomic(BookmarksPath, JsonSerializer.Serialize(bookmarks, Json)));
 
-    public List<Bookmark> LoadBookmarks()
-    {
-        try
-        {
-            if (!File.Exists(BookmarksPath)) return new List<Bookmark>();
-            return JsonSerializer.Deserialize<List<Bookmark>>(File.ReadAllText(BookmarksPath), Json) ?? new();
-        }
-        catch
-        {
-            return new List<Bookmark>();
-        }
-    }
+    public List<Bookmark> LoadBookmarks() => LoadListOrQuarantine<Bookmark>(BookmarksPath);
 
     // --- Session ------------------------------------------------------------
 
@@ -161,7 +160,15 @@ public sealed class Persistence
     }
 
     public void SaveSession(SessionFile session) =>
-        WriteGuarded(() => File.WriteAllText(SessionPath, JsonSerializer.Serialize(session, Json)));
+        WriteGuarded(() => WriteAllTextAtomic(SessionPath, JsonSerializer.Serialize(session, Json)));
+
+    /// <summary>Temp-file + move write: a crash mid-write can never truncate the previous file.</summary>
+    private void WriteAllTextAtomic(string path, string content)
+    {
+        var temp = $"{path}.tmp-{Guid.NewGuid():N}";
+        File.WriteAllText(temp, content);
+        File.Move(temp, path, overwrite: true);
+    }
 
     public SessionFile? LoadSession()
     {

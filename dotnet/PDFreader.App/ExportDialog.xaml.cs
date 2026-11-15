@@ -62,14 +62,9 @@ public partial class ExportDialog : Window
             FileName = Path.GetFileNameWithoutExtension(_doc.Name) + "-text.txt",
         };
         if (dialog.ShowDialog(this) != true) throw new OperationCanceledException();
-        var pages = new List<string>();
         _passwords.TryGetValue(_doc.Path, out var password);
-        for (var page = 1; page <= _doc.PageCount; page++)
-        {
-            pages.Add($"--- Page {page} ---");
-            pages.Add(_pdf.ExtractPageText(_doc.Path, password, page));
-        }
-        ExportService.WriteTextFile(dialog.FileName, string.Join(Environment.NewLine, pages));
+        // Single-parse extraction (old loop re-parsed the file per page).
+        ExportService.WriteTextFile(dialog.FileName, _pdf.ExtractAllText(_doc.Path, password));
         return dialog.FileName;
     }
 

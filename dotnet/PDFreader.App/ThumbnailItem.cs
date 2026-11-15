@@ -18,15 +18,24 @@ public sealed class ThumbnailItem
     public async Task LoadAsync(PdfRenderer renderer, string path, string? password)
     {
         if (Loaded) return;
-        Loaded = true;
-        var png = await Task.Run(() => renderer.RenderPage(path, password, PageNumber, 150));
-        var image = new BitmapImage();
-        using var stream = new MemoryStream(png);
-        image.BeginInit();
-        image.CacheOption = BitmapCacheOption.OnLoad;
-        image.StreamSource = stream;
-        image.EndInit();
-        image.Freeze();
-        Image = image;
+        try
+        {
+            var png = await Task.Run(() => renderer.RenderPage(path, password, PageNumber, 150));
+            var image = new BitmapImage();
+            using var stream = new MemoryStream(png);
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.StreamSource = stream;
+            image.EndInit();
+            image.Freeze();
+            Image = image;
+            Loaded = true;
+        }
+        catch
+        {
+            // Mark-as-loaded-before-render left failed thumbnails permanently
+            // blank for the session; allow a retry on the next refresh.
+            Loaded = false;
+        }
     }
 }

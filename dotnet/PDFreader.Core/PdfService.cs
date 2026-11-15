@@ -45,6 +45,22 @@ public sealed class PdfService
     }
 
     /// <summary>
+    /// Extracts all pages' text opening the document ONCE. The per-page
+    /// ExtractPageText loop re-parsed the whole file for every page.
+    /// </summary>
+    public string ExtractAllText(string path, string? password)
+    {
+        var lines = new List<string>();
+        using var doc = OpenPig(path, password);
+        foreach (var page in doc.GetPages())
+        {
+            lines.Add($"--- Page {page.Number} ---");
+            lines.Add(string.Join(" ", page.GetWords().Select(w => w.Text)));
+        }
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>
     /// Words of a page with their bounding boxes in PDF points (bottom-left
     /// origin), for the Select tool's text selection.
     /// </summary>

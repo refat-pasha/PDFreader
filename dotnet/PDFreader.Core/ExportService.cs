@@ -22,7 +22,13 @@ public static class ExportService
             lines.Add("");
             if (!string.IsNullOrWhiteSpace(note.Body))
             {
-                lines.Add(note.Body.Trim());
+                // Escape Markdown-significant line starts so a note beginning
+                // with '#' or '---' can't restructure the exported document.
+                var body = note.Body.Trim();
+                if (body.StartsWith("#") || body.StartsWith("---"))
+                    lines.Add("\\" + body);
+                else
+                    lines.Add(body);
                 lines.Add("");
             }
             if (note.Links.Count > 0)
@@ -42,17 +48,31 @@ public static class ExportService
 
     /// <summary>
     /// Writes a minimal valid .docx containing the given plain-text paragraphs
-    /// using OpenXML. Suitable for notes and extracted page text.
+    /// using OpenXML. Suitable for notes and extracted page text. Newlines
+    /// inside a paragraph become explicit Break runs — Word collapses bare \n
+    /// inside a single Text run.
     /// </summary>
     public static void WriteDocx(string path, string title, IReadOnlyList<string> paragraphs)
     {
         using var document = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Create(
             path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document);
         var main = document.AddMainDocumentPart();
-        main.Document = new DocumentFormat.OpenXml.Wordprocessing.Document(
-            new DocumentFormat.OpenXml.Wordprocessing.Body(
-                paragraphs.Select(p => new DocumentFormat.OpenXml.Wordprocessing.Paragraph(
-                    new DocumentFormat.OpenXml.Wordprocessing.Text(p) { Space = DocumentFormat.OpenXml.SpaceProcessingModeValues.Preserve }))));
+        var body = new DocumentFormat.OpenXml.Wordprocessing.Body();
+        foreach (var paragraphText in paragraphs)
+        {
+            var paragraph = new DocumentFormat.OpenXml.Wordprocessing.Paragraph();
+            var segments = (paragraphText ?? "").Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
+            for (var i = 0; i < segments.Length; i++)
+            {
+                if (i > 0) paragraph.AppendChild(new DocumentFormat.OpenXml.Wordprocessing.Break());
+                paragraph.AppendChild(new DocumentFormat.OpenXml.Wordprocessing.Text(segments[i])
+                {
+                    Space = DocumentFormat.OpenXml.SpaceProcessingModeValues.Preserve,
+                });
+            }
+            body.AppendChild(paragraph);
+        }
+        main.Document = new DocumentFormat.OpenXml.Wordprocessing.Document(body);
     }
 
     public static string NotesFilename(DateTime? at = null)

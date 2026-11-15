@@ -107,8 +107,39 @@ public sealed class PageViewer : Border
         _overlay.MouseUp += OnOverlayUp;
         _overlay.MouseWheel += OnOverlayWheel;
         _scroll.PreviewMouseWheel += OnScrollWheel;
+        // Capture can be stolen mid-drag (Alt-Tab, toast, system dialog): the
+        // matching MouseUp never arrives and ink kept drawing with no button
+        // held. Commit-or-cancel exactly like OnOverlayUp.
+        _overlay.LostMouseCapture += (_, _) =>
+        {
+            if (_drawing)
+            {
+                _drawing = false;
+                if (_inkStroke is not null)
+                {
+                    _overlay.Children.Remove(_inkStroke);
+                    _inkStroke = null;
+                }
+                if (_previewShape is not null)
+                {
+                    _overlay.Children.Remove(_previewShape);
+                    _previewShape = null;
+                }
+                _inkPoints.Clear();
+            }
+            if (_selecting)
+            {
+                _selecting = false;
+                if (_selRect is not null)
+                {
+                    _overlay.Children.Remove(_selRect);
+                    _selRect = null;
+                }
+                ClearWordHighlights();
+            }
+        };
 
-        _workspace.StateChanged += () => Dispatcher.BeginInvoke(RedrawAnnotations);
+        _workspace.StateChanged += OnWorkspaceStateChanged;
         // Fit modes need the real viewport; re-render when the layout settles.
         _scroll.SizeChanged += (_, args) =>
         {
@@ -168,7 +199,10 @@ public sealed class PageViewer : Border
         // previous page's scroll offset (buttons, wheel, thumbnails, etc.).
         _scroll.ScrollToTop();
         _scroll.ScrollToHorizontalOffset(0);
-        // Selection state belongs to the old page.
+        // Selection state belongs to the old page: without this, Ctrl+C after
+        // a page turn silently copied the PREVIOUS page's text.
+        _hasSelection = false;
+        _selectionText = "";
         ClearWordHighlights();
         _wordCache = null;
         PageChanged?.Invoke(Page);
@@ -209,6 +243,9 @@ public sealed class PageViewer : Border
     /// <summary>The zoom actually applied by the last render (fit modes recompute it).</summary>
     public double EffectiveZoom => _zoom;
 
+    /// <summary>Current rotation of this viewer (per-tab; 0/90/180/270).</summary>
+    public int Rotation => _rotation;
+
     // ------------------------------------------------------------- wheel input
 
     /// <summary>
@@ -225,8 +262,10 @@ public sealed class PageViewer : Border
             return;
         }
 
-        // Page fully visible (fit modes): wheel = page turn.
-        if (_scroll.ScrollableHeight <= 0 && _scroll.ScrollableWidth <= 0)
+        // Page-turn mode whenever there's no VERTICAL overflow: the old
+        // condition also required no horizontal overflow, creating a dead
+        // zone where a wide page at custom zoom made the wheel do nothing.
+        if (_scroll.ScrollableHeight <= 0)
         {
             e.Handled = true;
             TurnPage(e.Delta > 0 ? -1 : 1);
@@ -289,18 +328,25 @@ public sealed class PageViewer : Border
         _passwords.TryGetValue(_doc.Path, out var password);
         // Final (rotated) page box in points — matches what RenderPage produces.
         var (w, h) = _renderer.GetRotatedPageSize(_doc.Path, password, Page, _rotation);
-        // The viewer may not be measured yet (first render) — fall back to the
-        // host window's client size so fit modes still produce a usable scale.
-        double availW = ActualWidth > 40 ? ActualWidth - 40 : 0;
-        double availH = ActualHeight > 40 ? ActualHeight - 30 : 0;
-        if (ExternalViewport.Width > 40)
+        // Viewport priority: the LIVE measured size wins when valid (it's
+        // fresh after every resize/sidebar toggle); ExternalViewport is only
+        // the first-render fallback before the viewer has been measured. The
+        // old order used the stale hint forever, so pages kept the old scale
+        // after maximizing or toggling the sidebar.
+        double availW = 0, availH = 0;
+        if (ActualWidth > 40)
         {
-            // Trust the window-supplied viewport (rail/panel already excluded).
+            availW = ActualWidth - 40;
+            availH = ActualHeight > 40 ? ActualHeight - 30 : 0;
+        }
+        else if (ExternalViewport.Width > 40)
+        {
             availW = ExternalViewport.Width - 40;
             availH = ExternalViewport.Height - 30;
         }
-        else if (availW <= 0 && Window.GetWindow(this) is { } host)
+        else if (Window.GetWindow(this) is { } host)
         {
+            // Not yet measured and no hint: fall back to the host window.
             availW = host.ActualWidth - 320;
             availH = host.ActualHeight - 150;
         }
@@ -345,6 +391,10 @@ public sealed class PageViewer : Border
         var cacheKey = (page, widthPx, rotation);
         if (_bitmapCache.TryGetValue(cacheKey, out var cachedImage))
         {
+            // Refresh LRU position so the current page is never the next
+            // eviction victim.
+            _lruOrder.Remove(cacheKey);
+            _lruOrder.AddLast(cacheKey);
             ApplyBitmap(cachedImage, page, widthPx, rotation);
             Diagnostics.Trace($"render CACHED page={page} (instant flip)");
             // Refresh in the background so annotations drawn on the PDF itself
@@ -352,6 +402,9 @@ public sealed class PageViewer : Border
         }
 
         _pageHost.Children.Remove(_busy);
+        // Reset stale error text: after one failed render the old
+        // "Could not render page" message flashed on every later page turn.
+        _busy.Text = "Rendering…";
         _pageHost.Children.Add(_busy);
 
         _passwords.TryGetValue(_doc.Path, out var password);
@@ -466,13 +519,21 @@ public sealed class PageViewer : Border
 
     private void CacheBitmap((int Page, int Width, int Rotation) key, BitmapImage image)
     {
+        // LRU: Dictionary order is unspecified after removals, so the old
+        // Keys.First() eviction could evict the CURRENT page's bitmap,
+        // defeating the instant-flip feature. Refresh on every access.
+        _lruOrder.Remove(key);
+        _lruOrder.AddLast(key);
         _bitmapCache[key] = image;
         while (_bitmapCache.Count > MaxCachedBitmaps)
         {
-            var oldest = _bitmapCache.Keys.First();
+            var oldest = _lruOrder.First!.Value;
+            _lruOrder.RemoveFirst();
             _bitmapCache.Remove(oldest);
         }
     }
+
+    private readonly LinkedList<(int Page, int Width, int Rotation)> _lruOrder = new();
 
     private void SetError(string message)
     {
@@ -603,7 +664,12 @@ public sealed class PageViewer : Border
     private void EraseAt(System.Windows.Point position)
     {
         var pagePoint = ToPagePoint(position);
-        double tolerancePt = 10.0 * _pagePointSize.W / Math.Max(1, _overlay.Width);
+        // Rotation-aware tolerance: at 90/270 the overlay width maps to the
+        // page height (the fixed W-based tolerance was ~23% too small).
+        double ptPerPx = (_rotation is 90 or 270)
+            ? _pagePointSize.H / Math.Max(1, _overlay.Width)
+            : _pagePointSize.W / Math.Max(1, _overlay.Width);
+        double tolerancePt = 10.0 * ptPerPx;
         var candidates = _workspace.AnnotationsFor(_doc.Id, Page - 1);
         for (var i = candidates.Count - 1; i >= 0; i--)
         {
@@ -791,6 +857,12 @@ public sealed class PageViewer : Border
         System.Windows.Point Map(PointD p) => FromPagePoint(p);
 
         var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(ann.Color));
+        // Rotation-aware uniform scale: at 90/270 the overlay width maps to
+        // the page HEIGHT. The old unconditional W-based scale made strokes
+        // ~29% too thick when rotated and shrank the eraser tolerance.
+        double strokeScale = (_rotation is 90 or 270)
+            ? _overlay.Width / _pagePointSize.H
+            : _overlay.Width / _pagePointSize.W;
         switch (ann.Kind)
         {
             case AnnotationKind.Ink or AnnotationKind.Highlighter:
@@ -798,7 +870,7 @@ public sealed class PageViewer : Border
                 var poly = new System.Windows.Shapes.Polyline
                 {
                     Stroke = brush,
-                    StrokeThickness = Math.Max(1, ann.StrokeWidth * _overlay.Width / _pagePointSize.W),
+                    StrokeThickness = Math.Max(1, ann.StrokeWidth * strokeScale),
                     Opacity = ann.Opacity,
                     StrokeLineJoin = PenLineJoin.Round,
                     StrokeStartLineCap = PenLineCap.Round,
@@ -808,6 +880,37 @@ public sealed class PageViewer : Border
                 _overlay.Children.Add(poly);
                 break;
             }
+            case AnnotationKind.Image:
+            {
+                // Image stamps were stored but never drawn (silent no-op).
+                if (ann.ImageData is null || ann.ImageData.Length == 0) break;
+                try
+                {
+                    var stamp = new BitmapImage();
+                    using var ms = new MemoryStream(ann.ImageData);
+                    stamp.BeginInit();
+                    stamp.CacheOption = BitmapCacheOption.OnLoad;
+                    stamp.StreamSource = ms;
+                    stamp.EndInit();
+                    stamp.Freeze();
+                    var a = Map(ann.Points[0]);
+                    var b = Map(ann.Points[^1]);
+                    var left = Math.Min(a.X, b.X);
+                    var top = Math.Min(a.Y, b.Y);
+                    _overlay.Children.Add(new System.Windows.Controls.Image
+                    {
+                        Source = stamp,
+                        Width = Math.Abs(b.X - a.X),
+                        Height = Math.Abs(b.Y - a.Y),
+                        Stretch = Stretch.Fill,
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        VerticalAlignment = VerticalAlignment.Top,
+                        Margin = new Thickness(left, top, 0, 0),
+                    });
+                }
+                catch { /* corrupt image data: skip rather than break the page */ }
+                break;
+            }
             case AnnotationKind.Rectangle:
             {
                 var a = Map(ann.Points[0]);
@@ -815,7 +918,7 @@ public sealed class PageViewer : Border
                 _overlay.Children.Add(new System.Windows.Shapes.Rectangle
                 {
                     Stroke = brush,
-                    StrokeThickness = Math.Max(1, ann.StrokeWidth * _overlay.Width / _pagePointSize.W),
+                    StrokeThickness = Math.Max(1, ann.StrokeWidth * strokeScale),
                     Width = Math.Abs(b.X - a.X),
                     Height = Math.Abs(b.Y - a.Y),
                     HorizontalAlignment = HorizontalAlignment.Left,
@@ -831,7 +934,7 @@ public sealed class PageViewer : Border
                 _overlay.Children.Add(new System.Windows.Shapes.Ellipse
                 {
                     Stroke = brush,
-                    StrokeThickness = Math.Max(1, ann.StrokeWidth * _overlay.Width / _pagePointSize.W),
+                    StrokeThickness = Math.Max(1, ann.StrokeWidth * strokeScale),
                     Width = Math.Abs(b.X - a.X),
                     Height = Math.Abs(b.Y - a.Y),
                     HorizontalAlignment = HorizontalAlignment.Left,
@@ -848,11 +951,39 @@ public sealed class PageViewer : Border
                 {
                     X1 = a.X, Y1 = a.Y, X2 = b.X, Y2 = b.Y,
                     Stroke = brush,
-                    StrokeThickness = Math.Max(1, ann.StrokeWidth * _overlay.Width / _pagePointSize.W),
+                    StrokeThickness = Math.Max(1, ann.StrokeWidth * strokeScale),
                 });
                 break;
             }
         }
+    }
+
+    private void OnWorkspaceStateChanged()
+    {
+        if (_detached) return;
+        Dispatcher.BeginInvoke(RedrawAnnotations);
+    }
+
+    private bool _detached;
+
+    /// <summary>
+    /// Called by MainWindow when this viewer's tab closes. Without it the
+    /// Workspace.StateChanged subscription rooted every closed viewer forever
+    /// (visual tree + bitmap cache ≈ 60-90 MB per closed tab), and stale
+    /// Rendered callbacks kept writing the status bar after close.
+    /// </summary>
+    public void Detach()
+    {
+        _detached = true;
+        _workspace.StateChanged -= OnWorkspaceStateChanged;
+        _renderGeneration?.Cancel();
+        _renderGeneration?.Dispose();
+        _renderGeneration = null;
+        _bitmapCache.Clear();
+        _wordCache = null;
+        _wordHighlights.Clear();
+        _overlay.Children.Clear();
+        _pageImage.Source = null;
     }
 
     public void SetPageSize((double W, double H) size) => _pagePointSize = size;

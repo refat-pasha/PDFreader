@@ -81,8 +81,13 @@ public class WorkspaceTests : IDisposable
     }
 
     [Fact]
-    public void Close_document_removes_annotations_and_bookmarks()
+    public void Close_document_keeps_annotations_and_bookmarks_for_reconnect()
     {
+        // Behavior change from the QA audit: closing a tab used to permanently
+        // delete that document's annotations and bookmarks (and SaveSession
+        // then erased them from disk). Closing is a workspace action — markup
+        // is kept and reconnects when the file is opened again (path-stable
+        // ids) instead of being silently destroyed.
         var doc = _ws.OpenDocument(@"C:\docs\a.pdf", 5);
         _ws.AddAnnotation(new Annotation
         {
@@ -92,8 +97,8 @@ public class WorkspaceTests : IDisposable
         _ws.AddBookmark(doc.Id, 2);
         _ws.CloseDocument(doc.Id);
         Assert.Empty(_ws.Documents);
-        Assert.Empty(_ws.Annotations);
-        Assert.Empty(_ws.Bookmarks);
+        Assert.NotEmpty(_ws.Annotations);
+        Assert.NotEmpty(_ws.Bookmarks);
         Assert.Null(_ws.ActiveDocument);
     }
 }

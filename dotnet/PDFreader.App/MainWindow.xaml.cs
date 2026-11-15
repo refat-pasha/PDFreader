@@ -33,6 +33,10 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _workspace.StateChanged += () => Dispatcher.Invoke(RefreshChrome);
+        // Re-fit the page when the window geometry changes: the old code only
+        // computed the viewport on tab switch, so maximize/restore left the
+        // page at the old scale until the tab was re-selected.
+        SizeChanged += (_, _) => ShowPageForActiveDoc();
         RestoreSession();
         UpdateRecentMenu();
         SetTool("Select");
@@ -251,6 +255,7 @@ public partial class MainWindow : Window
     {
         if (_viewersByDocId.TryGetValue(docId, out var viewer))
         {
+            viewer.Detach();
             ViewerHost.Content = null;
             _viewersByDocId.Remove(docId);
         }
@@ -260,6 +265,13 @@ public partial class MainWindow : Window
             _tabsByDocId.Remove(docId);
         }
         var wasActive = _workspace.ActiveDocument?.Id == docId;
+        // Security: forget this document's password when its tab closes — the
+        // old code retained it until exit and silently auto-unlocked the file
+        // on reopen with no prompt.
+        if (_workspace.Documents.FirstOrDefault(d => d.Id == docId) is { } closing)
+            _passwords.Remove(closing.Path);
+        // Workspace.CloseDocument keeps annotations/bookmarks (path-stable
+        // ids reconnect them on reopen) — closing a tab is not "delete markup".
         _workspace.CloseDocument(docId);
         if (_workspace.Documents.Count > 0 && wasActive)
         {
@@ -397,8 +409,11 @@ public partial class MainWindow : Window
 
     private void OnRotateClick(object sender, RoutedEventArgs e)
     {
-        _rotation = (_rotation + 90) % 360;
-        ActiveViewer?.ApplyRotation(_rotation);
+        // Per-tab rotation: the old shared _rotation counter compounded across
+        // tabs — rotating tab A to 90° then pressing Ctrl+R on tab B jumped
+        // straight to 180°. Each viewer owns its rotation; read it back.
+        if (ActiveViewer is null) return;
+        ActiveViewer.ApplyRotation((ActiveViewer.Rotation + 90) % 360);
     }
 
     // ------------------------------------------------------------- markup tools
@@ -450,6 +465,9 @@ public partial class MainWindow : Window
 
     private void ShowSidebarTab(string panel)
     {
+        // Normalize: Ctrl+F passed "Search" (capital S) while every
+        // comparison here is case-sensitive — the result was a blank panel.
+        panel = panel.ToLowerInvariant();
         Rail.Visibility = Visibility.Visible;
         SidePanel.Visibility = Visibility.Visible;
         SidebarButton.Tag = "active";
@@ -460,9 +478,10 @@ public partial class MainWindow : Window
         PanelBookmarks.Visibility = panel == "bookmarks" ? Visibility.Visible : Visibility.Collapsed;
         foreach (var button in new[] { RailPages, RailOutline, RailSearch, RailNotes, RailBookmarks })
         {
-            var name = button.Tag as string ?? "";
-            var isActive = name.Contains(panel);
-            button.Tag = isActive ? name.Replace(panel, panel + " active") : name;
+            // Strip any stale "active" suffix, then re-apply cleanly (the old
+            // name.Replace kept appending " active active…").
+            var baseName = (button.Tag as string ?? "").Split(' ')[0];
+            button.Tag = baseName == panel ? $"{baseName} active" : baseName;
         }
     }
 
@@ -485,6 +504,8 @@ public partial class MainWindow : Window
         var show = SidePanel.Visibility == Visibility.Collapsed;
         SidePanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         SidebarButton.Tag = show ? "active" : "inactive";
+        // The viewer's available width just changed: re-fit the page.
+        ShowPageForActiveDoc();
     }
 
     private async void RefreshThumbnails(DocumentInfo doc)
@@ -676,27 +697,51 @@ public partial class MainWindow : Window
         _passwords.TryGetValue(sourcePath, out var password);
         Task.Run(async () =>
         {
+            string? temp = null;
             try
             {
                 Diagnostics.Trace("print: exporting annotated pdf");
-                var temp = Path.Combine(Path.GetTempPath(), $"pdfreader-print-{Guid.NewGuid():N}.pdf");
+                temp = Path.Combine(Path.GetTempPath(), $"pdfreader-print-{Guid.NewGuid():N}.pdf");
                 PdfFlattenExporter.Export(_renderer, _pdf, sourcePath, password, pageCount, temp, annotations);
                 Diagnostics.Trace("print: rasterizing pages");
-                var bitmaps = PdfPrintRenderer.RenderAllPages(temp);
+                var bitmaps = PdfPrintRenderer.RenderAllPages(temp, _renderer);
                 Diagnostics.Trace($"print: {bitmaps.Count} pages rasterized, showing dialog");
+                // The renderer has already decoded every page — the temp PDF
+                // can go now. The old code leaked a full copy of every printed
+                // (often confidential) document in %TEMP% forever.
+                try { File.Delete(temp); temp = null; } catch { }
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    _printing = false;
                     var dialog = new System.Windows.Controls.PrintDialog();
                     if (dialog.ShowDialog() != true)
                     {
                         Diagnostics.Trace("print: dialog canceled");
+                        _printing = false;
                         SetStatus("Print canceled.");
                         return;
                     }
                     try
                     {
-                        dialog.PrintTicket.PageOrientation = System.Printing.PageOrientation.Portrait;
+                        // Zero-area/fax queues report no printable area: the
+                        // old scale math divided by zero and produced blank
+                        // pages or layout exceptions.
+                        if (dialog.PrintableAreaWidth <= 48 || dialog.PrintableAreaHeight <= 48)
+                        {
+                            _printing = false;
+                            SetStatus("The selected printer reported no printable area.");
+                            return;
+                        }
+                        // Orientation by content: forcing Portrait made
+                        // landscape documents print as tiny strips, and some
+                        // drivers reject the ticket (killing the whole job).
+                        try
+                        {
+                            var landscape = bitmaps.Count > 0 && bitmaps[0].PixelWidth > bitmaps[0].PixelHeight;
+                            dialog.PrintTicket.PageOrientation = landscape
+                                ? System.Printing.PageOrientation.Landscape
+                                : System.Printing.PageOrientation.Portrait;
+                        }
+                        catch { /* ticket rejected: print with defaults */ }
                         double margin = 24;
                         var fixedDoc = new System.Windows.Documents.FixedDocument();
                         foreach (var bmp in bitmaps)
@@ -709,6 +754,7 @@ public partial class MainWindow : Window
                             };
                             var scale = Math.Min((dialog.PrintableAreaWidth - 2 * margin) / bmp.Width,
                                                  (dialog.PrintableAreaHeight - 2 * margin) / bmp.Height);
+                            scale = Math.Clamp(scale, 0.01, 4.0);
                             page.Width = bmp.Width * scale;
                             page.Height = bmp.Height * scale;
                             System.Windows.Controls.Canvas.SetLeft(page, 0);
@@ -722,10 +768,12 @@ public partial class MainWindow : Window
                         Diagnostics.Trace("print: sent to printer");
                         SetStatus($"Printing {doc.Name}…");
                     }
-                    catch (Exception ex)
+                    finally
                     {
-                        Diagnostics.Trace($"print: print failed: {ex.Message}");
-                        MessageBox.Show(this, ex.Message, "Print", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        // Released only after the whole dialog + spool flow —
+                        // the old code reset it BEFORE ShowDialog, letting
+                        // Ctrl+P start a second concurrent export pipeline.
+                        _printing = false;
                     }
                 });
             }
@@ -736,8 +784,14 @@ public partial class MainWindow : Window
                 {
                     _printing = false;
                     SetStatus("Print failed.");
-                    MessageBox.Show(this, ex.Message, "Print", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Application.Current.MainWindow?.IsLoaded == true
+                        ? Application.Current.MainWindow : null,
+                        ex.Message, "Print", MessageBoxButton.OK, MessageBoxImage.Warning);
                 });
+            }
+            finally
+            {
+                try { if (temp is not null && File.Exists(temp)) File.Delete(temp); } catch { }
             }
         });
     }
@@ -825,11 +879,14 @@ public partial class MainWindow : Window
         };
         foreach (var doc in _workspace.Documents)
         {
+            // Per-document view state: the old code wrote the SAME zoom/rotation
+            // into every doc's session view, so restoring a different tab used
+            // another tab's numbers.
             session.Views[doc.Path] = new Persistence.SessionView
             {
                 Page = _viewersByDocId.TryGetValue(doc.Id, out var v) ? v.Page : 1,
-                Zoom = _zoom,
-                Rotation = _rotation,
+                Zoom = _viewersByDocId.TryGetValue(doc.Id, out var v2) ? v2.EffectiveZoom : _zoom,
+                Rotation = _viewersByDocId.TryGetValue(doc.Id, out var v3) ? v3.Rotation : 0,
             };
         }
         _persistence.SaveSession(session);
@@ -912,8 +969,17 @@ public partial class MainWindow : Window
         }
 
         if (!ctrl) return;
+        // Text editing has priority: Ctrl+Z/Ctrl+C etc. inside the notes
+        // editor, search box or page box must undo/copy TEXT, not run
+        // document actions (typing undo was hijacked, and copy pasted stale
+        // PDF selection text). Only allow save/print through while typing.
+        var typing = Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase;
         switch (e.Key)
         {
+            case Key.C when typing: return; // let the TextBox copy its own text
+            case Key.Z when typing: return; // let the TextBox undo its own text
+            case Key.X when typing: return;
+            case Key.A when typing: return;
             case Key.C:
                 // Ctrl+C copies the active text selection (Select tool).
                 if (ActiveViewer?.CopySelection() == true) e.Handled = true;
@@ -937,11 +1003,14 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool _saving;
+
     private void SaveAnnotatedCopy()
     {
         var doc = _workspace.ActiveDocument;
         var viewer = ActiveViewer;
         if (doc is null || viewer is null) return;
+        if (_saving) { SetStatus("Already saving…"); return; }
         var dialog = new SaveFileDialog
         {
             Title = "Save annotated copy",
@@ -949,14 +1018,36 @@ public partial class MainWindow : Window
             FileName = Path.GetFileNameWithoutExtension(doc.Name) + "-annotated.pdf",
         };
         if (dialog.ShowDialog(this) != true) return;
-        try
+        _saving = true;
+        SetStatus("Saving annotated copy…");
+        // Export runs OFF the UI thread (same rationale as the print path):
+        // inline it froze the window for the entire multi-page flatten while
+        // background renders held the renderer gate.
+        var annotations = _workspace.Annotations.Where(a => a.DocId == doc.Id).ToList();
+        var sourcePath = doc.Path;
+        var pageCount = doc.PageCount;
+        _passwords.TryGetValue(sourcePath, out var password);
+        var targetPath = dialog.FileName;
+        Task.Run(() =>
         {
-            viewer.ExportAnnotatedPdf(dialog.FileName);
-            SetStatus($"Saved annotated copy to {dialog.FileName}");
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Export failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
+            try
+            {
+                PdfFlattenExporter.Export(_renderer, _pdf, sourcePath, password, pageCount, targetPath, annotations);
+                Dispatcher.InvokeAsync(() =>
+                {
+                    _saving = false;
+                    SetStatus($"Saved annotated copy to {targetPath}");
+                });
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.InvokeAsync(() =>
+                {
+                    _saving = false;
+                    SetStatus("Save failed.");
+                    MessageBox.Show(this, ex.Message, "Export failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                });
+            }
+        });
     }
 }

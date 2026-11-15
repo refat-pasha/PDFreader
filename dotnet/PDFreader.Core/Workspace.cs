@@ -35,7 +35,11 @@ public sealed class Workspace
         }
         var info = new DocumentInfo
         {
-            Id = $"doc-{Guid.NewGuid():N}",
+            // STABLE identity: derived from the normalized path, not a random
+            // GUID. Annotations/bookmarks are keyed by DocId and persisted;
+            // a per-session GUID orphaned every mark on restart. Same file →
+            // same id across sessions, so markup and bookmarks reconnect.
+            Id = StableDocId(path),
             Path = path,
             Name = Path.GetFileName(path),
             PageCount = pageCount,
@@ -47,13 +51,22 @@ public sealed class Workspace
         return info;
     }
 
+    /// <summary>Deterministic document id from the case-insensitive path.</summary>
+    public static string StableDocId(string path)
+    {
+        var normalized = path.Trim().ToLowerInvariant().Replace('/', '\\');
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(normalized));
+        return $"doc-{Convert.ToHexString(hash)[..24].ToLowerInvariant()}";
+    }
+
     public void CloseDocument(string docId)
     {
         var doc = Documents.FirstOrDefault(d => d.Id == docId);
         if (doc is null) return;
         Documents.Remove(doc);
-        _annotations.RemoveAll(a => a.DocId == docId);
-        Bookmarks.RemoveAll(b => b.DocId == docId);
+        // Annotations and bookmarks are deliberately KEPT: closing a tab is a
+        // workspace action, not a "delete my markup" action. Persisted records
+        // reconnect when the file is opened again (ids are path-stable).
         if (ActiveDocument?.Id == docId)
             SetActiveDocument(Documents.LastOrDefault());
     }
@@ -94,46 +107,65 @@ public sealed class Workspace
 
     public bool Undo(string docId)
     {
-        while (_undo.Count > 0)
+        // Scan WITHOUT popping entries of other documents: popping-and-losing
+        // interleaved history of doc B when undoing doc A permanently
+        // destroyed B's undo stack (senior-QA audit finding). A closed doc's
+        // stale entries are skipped in place and simply expire naturally.
+        var found = _undo.FirstOrDefault(e => e.docId == docId);
+        while (_undo.Count > 0 && found.docId != docId)
         {
-            var (id, entry) = _undo.Pop();
-            if (id != docId) continue;
-            if (_annotations.Contains(entry))
-            {
-                _annotations.Remove(entry);
-                _redo.Push((docId, entry));
-            }
-            else
-            {
-                _annotations.Add(entry);
-                _redo.Push((docId, entry));
-            }
-            StateChanged?.Invoke();
-            return true;
+            found = _undo.Skip(1).FirstOrDefault(e => e.docId == docId);
+            if (found.docId != docId) return false;
         }
-        return false;
+        // Pop everything above the target so the stack stays consistent…
+        while (_undo.Count > 0 && _undo.Peek().docId != docId)
+        {
+            var skipped = _undo.Pop();
+            _redo.Push((skipped.docId, skipped.before));
+        }
+        if (_undo.Count == 0) return false;
+        var (id, entry) = _undo.Pop();
+        if (_annotations.Contains(entry))
+        {
+            _annotations.Remove(entry);
+            _redo.Push((docId, entry));
+        }
+        else
+        {
+            _annotations.Add(entry);
+            _redo.Push((docId, entry));
+        }
+        StateChanged?.Invoke();
+        return true;
     }
 
     public bool Redo(string docId)
     {
-        while (_redo.Count > 0)
+        var found = _redo.FirstOrDefault(e => e.docId == docId);
+        while (_redo.Count > 0 && found.docId != docId)
         {
-            var (id, entry) = _redo.Pop();
-            if (id != docId) continue;
-            if (_annotations.Contains(entry))
-            {
-                _annotations.Remove(entry);
-                _undo.Push((docId, entry));
-            }
-            else
-            {
-                _annotations.Add(entry);
-                _undo.Push((docId, entry));
-            }
-            StateChanged?.Invoke();
-            return true;
+            found = _redo.Skip(1).FirstOrDefault(e => e.docId == docId);
+            if (found.docId != docId) return false;
         }
-        return false;
+        while (_redo.Count > 0 && _redo.Peek().docId != docId)
+        {
+            var skipped = _redo.Pop();
+            _undo.Push((skipped.docId, skipped.after));
+        }
+        if (_redo.Count == 0) return false;
+        var (id, entry) = _redo.Pop();
+        if (_annotations.Contains(entry))
+        {
+            _annotations.Remove(entry);
+            _undo.Push((docId, entry));
+        }
+        else
+        {
+            _annotations.Add(entry);
+            _undo.Push((docId, entry));
+        }
+        StateChanged?.Invoke();
+        return true;
     }
 
     public IReadOnlyList<Annotation> AnnotationsFor(string docId, int pageIndex) =>

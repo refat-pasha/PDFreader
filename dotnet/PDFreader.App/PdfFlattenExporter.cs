@@ -47,7 +47,10 @@ public static class PdfFlattenExporter
                 using var canvas = document.BeginPage(image.Width, image.Height);
                 canvas.DrawImage(image, 0, 0);
                 if (pageMarks.Count > 0)
-                    DrawMarks(canvas, pageMarks, image.Width / ptW, image.Height / ptH, ptW, ptH);
+                    // Raw pixel dims: DrawMarks derives its own Sx=pxW/ptW.
+                    // Passing pre-divided values made Sx = width/ptW² — every
+                    // mark collapsed into a ~1px dot at the page origin.
+                    DrawMarks(canvas, pageMarks, image.Width, image.Height, ptW, ptH);
                 document.EndPage();
             }
             document.Close();
@@ -60,13 +63,16 @@ public static class PdfFlattenExporter
                 data.AsStream().CopyTo(fs);
                 fs.Flush();
             }
+            // Commit happens inside the try so a locked target (open in
+            // another reader) surfaces a friendly error and the temp file is
+            // cleaned up in the finally below.
+            File.Move(tempPath, targetPath, overwrite: true);
         }
         finally
         {
-            if (File.Exists(tempPath))
-            {
-                File.Move(tempPath, targetPath, overwrite: true);
-            }
+            // Temp cleanup on every path — the previous code left orphaned
+            // pdfreader-export-*.pdf files whenever the move failed.
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
         }
     }
 
@@ -91,9 +97,15 @@ public static class PdfFlattenExporter
 
         foreach (var mark in marks)
         {
+            // Hardening: one malformed stored record must not abort the whole
+            // export/print (SKColor.Parse throws on invalid input; shape
+            // cases index Points without guards). Skip bad marks, keep going.
+            if (!SKColor.TryParse(mark.Color, out var color)) color = SKColors.Red;
+            if (mark.Points is null || mark.Points.Count == 0) continue;
+            if (mark.Kind is not (AnnotationKind.Ink or AnnotationKind.Highlighter) && mark.Points.Count < 2) continue;
             using var paint = new SKPaint
             {
-                Color = SKColor.Parse(mark.Color),
+                Color = color,
                 StrokeWidth = (float)Math.Max(1, mark.StrokeWidth * Sx),
                 IsAntialias = true,
                 Style = SKPaintStyle.Stroke,
@@ -140,6 +152,21 @@ public static class PdfFlattenExporter
                     var head = 12f;
                     canvas.DrawLine(b, new SKPoint(b.X - head * (float)Math.Cos(angle - Math.PI / 6), b.Y - head * (float)Math.Sin(angle - Math.PI / 6)), paint);
                     canvas.DrawLine(b, new SKPoint(b.X - head * (float)Math.Cos(angle + Math.PI / 6), b.Y - head * (float)Math.Sin(angle + Math.PI / 6)), paint);
+                    break;
+                }
+                case AnnotationKind.Image:
+                {
+                    // Image stamps were stored but never drawn (silent no-op).
+                    if (mark.ImageData is null || mark.ImageData.Length == 0) break;
+                    using var stamped = SKBitmap.Decode(mark.ImageData);
+                    if (stamped is null) break;
+                    using var stampImage = SKImage.FromBitmap(stamped);
+                    var a = Map(mark.Points[0]);
+                    var b = Map(mark.Points[^1]);
+                    var dest = new SKRect(
+                        Math.Min(a.X, b.X), Math.Min(a.Y, b.Y),
+                        Math.Max(a.X, b.X), Math.Max(a.Y, b.Y));
+                    canvas.DrawImage(stampImage, dest);
                     break;
                 }
             }
