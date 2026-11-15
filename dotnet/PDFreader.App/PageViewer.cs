@@ -388,6 +388,9 @@ public sealed class PageViewer : Border
 
         // Instant flip: reuse the decoded bitmap from a previous identical
         // render (e.g. flipping back a page, or returning to this zoom).
+        // NOTE: no prefetch from this path — on large documents the 6-entry
+        // LRU evicts neighbours quickly, and chained prefetch ping-pong
+        // re-rendered the same pages forever (permanent render storm).
         var cacheKey = (page, widthPx, rotation);
         if (_bitmapCache.TryGetValue(cacheKey, out var cachedImage))
         {
@@ -396,9 +399,13 @@ public sealed class PageViewer : Border
             _lruOrder.Remove(cacheKey);
             _lruOrder.AddLast(cacheKey);
             ApplyBitmap(cachedImage, page, widthPx, rotation);
+            _renderedPage = page;
+            _renderedZoom = _zoom;
+            _renderedRotation = rotation;
+            _pageHost.Children.Remove(_busy);
+            RedrawAnnotations();
             Diagnostics.Trace($"render CACHED page={page} (instant flip)");
-            // Refresh in the background so annotations drawn on the PDF itself
-            // stay current; the cached frame keeps the UI responsive meanwhile.
+            return;
         }
 
         _pageHost.Children.Remove(_busy);
@@ -436,7 +443,12 @@ public sealed class PageViewer : Border
                     _pageHost.Children.Remove(_busy);
                     RedrawAnnotations();
                     Rendered?.Invoke(page);
-                    // Prefetch neighbours so the next page turn is instant.
+                    // Prefetch neighbours ONLY from user-viewed renders. (The
+                    // cache-hit path must not prefetch: on large documents the
+                    // 6-entry LRU evicts neighbours within a couple of turns,
+                    // and chained prefetch ping-pong re-rendered the same
+                    // pages forever — a permanent background render storm that
+                    // starved the render gate and made large PDFs laggy.)
                     PrefetchNeighbours(page, widthPx, rotation, token);
                 });
             }
@@ -482,6 +494,13 @@ public sealed class PageViewer : Border
     private const int MaxCachedBitmaps = 6;
 
     /// <summary>Renders page±1 in the background so the next page turn is instant.</summary>
+    /// <remarks>
+    /// Only called from user-viewed renders. Guards against the prefetch
+    /// ping-pong storm: on large documents the 6-entry LRU evicted a
+    /// neighbour within a couple of turns, and each completed prefetch
+    /// (previously also chained its own prefetch) re-queued the other page
+    /// endlessly — saturating the render gate on big PDFs.
+    /// </remarks>
     private void PrefetchNeighbours(int page, int widthPx, int rotation, CancellationToken token)
     {
         foreach (var neighbour in new[] { page - 1, page + 1 })
@@ -489,6 +508,8 @@ public sealed class PageViewer : Border
             if (neighbour < 1 || neighbour > _doc.PageCount) continue;
             var key = (neighbour, widthPx, rotation);
             if (_bitmapCache.ContainsKey(key)) continue;
+            if (_inFlightPrefetch.Contains(key)) continue;
+            _inFlightPrefetch.Add(key);
             var localPage = neighbour;
             Task.Run(async () =>
             {
@@ -513,9 +534,15 @@ public sealed class PageViewer : Border
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex) { Diagnostics.Trace($"prefetch ERROR page={localPage}: {ex.Message}"); }
+                finally
+                {
+                    _inFlightPrefetch.Remove(key);
+                }
             }, token);
         }
     }
+
+    private readonly HashSet<(int Page, int Width, int Rotation)> _inFlightPrefetch = new();
 
     private void CacheBitmap((int Page, int Width, int Rotation) key, BitmapImage image)
     {

@@ -29,14 +29,30 @@ public partial class MainWindow : Window
     private bool _suppressNoteEvents;
     private string _activeTool = "Select";
 
+    /// <summary>Debounce timer for window-resize re-fits: firing ShowPageForActiveDoc
+    /// on every pixel of a drag-resize caused a render storm (the viewer re-renders
+    /// at each size). 150ms of quiet before one re-fit.</summary>
+    private System.Windows.Threading.DispatcherTimer? _resizeDebounce;
+
     public MainWindow()
     {
         InitializeComponent();
         _workspace.StateChanged += () => Dispatcher.Invoke(RefreshChrome);
-        // Re-fit the page when the window geometry changes: the old code only
+        // Debounced re-fit when the window geometry changes: the old code only
         // computed the viewport on tab switch, so maximize/restore left the
-        // page at the old scale until the tab was re-selected.
-        SizeChanged += (_, _) => ShowPageForActiveDoc();
+        // page at the old scale until the tab was re-selected — but an
+        // undebounced version storms renders during drag-resize.
+        SizeChanged += (_, _) =>
+        {
+            _resizeDebounce ??= new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(150),
+            };
+            _resizeDebounce.Tick -= ResizeDebounce_Tick;
+            _resizeDebounce.Tick += ResizeDebounce_Tick;
+            _resizeDebounce.Stop();
+            _resizeDebounce.Start();
+        };
         RestoreSession();
         UpdateRecentMenu();
         SetTool("Select");
@@ -111,6 +127,12 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(this, ex.Message, "PDFreader", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    private void ResizeDebounce_Tick(object? sender, EventArgs e)
+    {
+        _resizeDebounce?.Stop();
+        ShowPageForActiveDoc();
     }
 
     private void AskPassword(string path, bool incorrect = false)
@@ -519,17 +541,62 @@ public partial class MainWindow : Window
         ThumbList.ItemsSource = items;
         _thumbnailItems = items;
         _passwords.TryGetValue(doc.Path, out var password);
-        foreach (var item in items)
+
+        // VISIBLE-FIRST scheduling: the old loop rendered pages 1..N sequentially
+        // through the global render gate regardless of what the user looked at,
+        // calling ThumbList.Items.Refresh() after EACH thumbnail (300 full list
+        // re-layouts on the UI thread). Now: INotifyPropertyChanged pushes each
+        // thumbnail into view with no refresh, and rendering order follows what
+        // is actually visible (current page first, then viewport neighbors,
+        // then a background sweep) — scrolling the sidebar jumps ahead in the
+        // queue instead of waiting for pages 1-100.
+        var queue = new List<ThumbnailItem>(items);
+        var currentPage = ActiveViewer?.Page ?? 1;
+        var currentIdx = Math.Clamp(currentPage - 1, 0, queue.Count - 1);
+        var ordered = new List<ThumbnailItem> { queue[currentIdx] };
+        ordered.AddRange(queue.Where(i => i.PageNumber != currentPage));
+        var renderSeq = 0;
+        var token = _thumbRenderCts = new CancellationTokenSource();
+        var tokenValue = token;
+        var docId = doc.Id;
+
+        foreach (var item in ordered)
         {
-            if (_workspace.ActiveDocument?.Id != doc.Id) return; // user switched away
+            if (tokenValue.IsCancellationRequested || _workspace.ActiveDocument?.Id != docId) return;
+            // Yield between renders: keeps the render gate available for the
+            // main viewer and the UI thread responsive.
+            if (renderSeq++ % 3 == 0) await Task.Delay(30, tokenValue.Token).ContinueWith(_ => { });
+            if (tokenValue.IsCancellationRequested) return;
             try
             {
                 await item.LoadAsync(_renderer, doc.Path, password);
                 item.ReadingVisibility = item.PageNumber == (ActiveViewer?.Page ?? 1)
                     ? Visibility.Visible : Visibility.Collapsed;
-                ThumbList.Items.Refresh();
             }
             catch { }
+        }
+    }
+
+    private CancellationTokenSource? _thumbRenderCts;
+
+    /// <summary>Scrolling the sidebar raises ScrollChanged: render the page
+    /// nearest the viewport next (jumps the queue).</summary>
+    private void ThumbList_ScrollChanged(object sender, System.Windows.Controls.ScrollChangedEventArgs e)
+    {
+        if (_thumbnailItems is null || _thumbnailItems.Count == 0) return;
+        if (Math.Abs(e.VerticalChange) < 1) return;
+        // e.ExtentHeight is the full list height; estimate the first visible
+        // page from the scroll ratio (pixel scrolling with recycled
+        // containers has no per-item offset API).
+        var ratio = e.ExtentHeight > 0 ? e.VerticalOffset / e.ExtentHeight : 0;
+        var target = Math.Clamp((int)Math.Round(ratio * _thumbnailItems.Count) + 1, 1, _thumbnailItems.Count);
+        var item = _thumbnailItems.FirstOrDefault(t => t.PageNumber == target);
+        if (item is { Loaded: false })
+        {
+            // Best effort: render it now; the background sweep skips
+            // already-loaded items.
+            _passwords.TryGetValue(_workspace.ActiveDocument?.Path ?? "", out var password);
+            _ = item.LoadAsync(_renderer, _workspace.ActiveDocument?.Path ?? "", password);
         }
     }
 
@@ -539,9 +606,11 @@ public partial class MainWindow : Window
     {
         if (_thumbnailItems is null) return;
         var current = ActiveViewer?.Page ?? 1;
+        // INotifyPropertyChanged items update in place — the old
+        // ThumbList.Items.Refresh() re-laid-out the whole list on every page
+        // turn.
         foreach (var item in _thumbnailItems)
             item.ReadingVisibility = item.PageNumber == current ? Visibility.Visible : Visibility.Collapsed;
-        ThumbList.Items.Refresh();
     }
 
     private void OnNotesClick(object sender, RoutedEventArgs e) => ShowSidebarTab("notes");

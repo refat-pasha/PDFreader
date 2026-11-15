@@ -161,28 +161,36 @@
                             <TextBlock Text="PAGES" FontSize="11" FontWeight="SemiBold"
                                        Foreground="{StaticResource Brush.TextMuted}"/>
                         </DockPanel>
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                            <ListBox x:Name="ThumbList" SelectionChanged="ThumbList_SelectionChanged"
-                                     BorderThickness="0" Background="Transparent">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Margin="10,3">
-                                            <Border Background="#FAFAF8" BorderBrush="{StaticResource Brush.BorderSubtle}"
-                                                    BorderThickness="1" CornerRadius="2">
-                                                <Image Source="{Binding Image}" Stretch="Uniform"/>
-                                            </Border>
-                                            <Grid Margin="2,4,2,6">
-                                                <TextBlock Text="{Binding PageNumber}" FontSize="11"
-                                                           Foreground="{StaticResource Brush.TextSecondary}"/>
-                                                <TextBlock Text="Reading" FontSize="10" HorizontalAlignment="Right"
-                                                           Foreground="{StaticResource Brush.Accent}"
-                                                           Visibility="{Binding ReadingVisibility}"/>
-                                            </Grid>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </ScrollViewer>
+                        <!-- No wrapping ScrollViewer: it gives the ListBox infinite
+                             height and defeats UI virtualization (all 300 items
+                             realized at once = the "sidebar won't scroll /
+                             large PDF lag" bug). The ListBox scrolls itself and
+                             recycles containers. -->
+                        <ListBox x:Name="ThumbList" SelectionChanged="ThumbList_SelectionChanged"
+                                 ScrollViewer.ScrollChanged="ThumbList_ScrollChanged"
+                                 BorderThickness="0" Background="Transparent"
+                                 ScrollViewer.CanContentScroll="True"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Recycling"
+                                 VirtualizingPanel.ScrollUnit="Pixel">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="10,3">
+                                        <Border Background="#FAFAF8" BorderBrush="{StaticResource Brush.BorderSubtle}"
+                                                BorderThickness="1" CornerRadius="2">
+                                            <Image Source="{Binding Image}" Stretch="Uniform"/>
+                                        </Border>
+                                        <Grid Margin="2,4,2,6">
+                                            <TextBlock Text="{Binding PageNumber}" FontSize="11"
+                                                       Foreground="{StaticResource Brush.TextSecondary}"/>
+                                            <TextBlock Text="Reading" FontSize="10" HorizontalAlignment="Right"
+                                                       Foreground="{StaticResource Brush.Accent}"
+                                                       Visibility="{Binding ReadingVisibility}"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                     </Grid>
                     <!-- Outline -->
                     <TreeView x:Name="OutlineTree" Visibility="Collapsed" Margin="8,8"
