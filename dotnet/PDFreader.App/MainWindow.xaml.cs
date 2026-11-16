@@ -85,7 +85,8 @@ public partial class MainWindow : Window
             OpenPath(path);
     }
 
-    private void OpenPath(string path, string? password = null)
+    /// <summary>Opens a PDF path (file association, drag-drop, IPC forward, menu).</summary>
+    public void OpenPath(string path, string? password = null)
     {
         try
         {
