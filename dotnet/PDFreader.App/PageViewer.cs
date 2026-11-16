@@ -249,8 +249,10 @@ public sealed class PageViewer : Border
     // ------------------------------------------------------------- wheel input
 
     /// <summary>
-    /// Plain wheel: turn pages. The wheel scrolls the viewport when the page
-    /// overflows it and flips to the next/previous page at the edges.
+    /// Plain wheel: turn pages in FitWidth/FitPage modes — the default reading
+    /// gesture (Refat's spec: "scroll = next page"). Only when the user has
+    /// explicitly zoomed (Custom mode) does the wheel scroll the viewport,
+    /// flipping to the next/previous page at the top/bottom edges.
     /// Ctrl+wheel: zoom (delegated to the window).
     /// </summary>
     private void OnScrollWheel(object sender, MouseWheelEventArgs e)
@@ -262,17 +264,19 @@ public sealed class PageViewer : Border
             return;
         }
 
-        // Page-turn mode whenever there's no VERTICAL overflow: the old
-        // condition also required no horizontal overflow, creating a dead
-        // zone where a wide page at custom zoom made the wheel do nothing.
-        if (_scroll.ScrollableHeight <= 0)
+        // Fit modes: every wheel notch flips a page. (The earlier version
+        // required the whole page to fit the viewport, but the default mode
+        // is FitWidth where a portrait page is taller than the window — so
+        // the wheel scrolled instead of turning pages and the feature looked
+        // broken.)
+        if (_mode != ZoomMode.Custom)
         {
             e.Handled = true;
             TurnPage(e.Delta > 0 ? -1 : 1);
             return;
         }
 
-        // Zoomed in: scroll the viewport; flip page only when already at the edge.
+        // Custom zoom: scroll the viewport; flip page only when already at the edge.
         bool atBottom = _scroll.VerticalOffset >= _scroll.ScrollableHeight - 1;
         bool atTop = _scroll.VerticalOffset <= 1;
         if (e.Delta < 0 && atBottom && !atTop)
